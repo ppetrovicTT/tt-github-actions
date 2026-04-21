@@ -56,6 +56,13 @@ categories:
     action: "Check network connectivity and retry"
     severity: medium
 
+  runtime:exception:
+    description: "Unhandled Python exception in any component — LLM determines actual layer and category"
+    patterns:
+      - "Traceback (most recent call last)"
+      - "AssertionError"
+      - "RuntimeError"
+
   # HARDWARE/DRIVER
   hw:device:
     description: "Device detection/initialization issues"
@@ -150,13 +157,6 @@ categories:
       - "chip-to-chip"
 
   # VLLM
-  runtime:exception:
-    description: "Unhandled Python exception in any component — LLM determines actual layer and category"
-    patterns:
-      - "Traceback (most recent call last)"
-      - "AssertionError"
-      - "RuntimeError"
-
   vllm:engine:
     description: "vLLM engine initialization/runtime errors"
     patterns:
