@@ -43,7 +43,11 @@ runs:
 
     - name: Set venv path
       shell: bash
-      run: echo "AI_SUMMARY_VENV=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
+      run: |
+        echo "AI_SUMMARY_VENV=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
+        echo "UV_PROJECT_ENVIRONMENT=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
+        echo "VIRTUAL_ENV=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
+        echo "UV_LINK_MODE=copy" >> "$GITHUB_ENV"
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -86,7 +90,6 @@ runs:
         echo "tool_dir=$TOOL_DIR" >> "$GITHUB_OUTPUT"
         echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
-        export UV_PROJECT_ENVIRONMENT="$AI_SUMMARY_VENV"
         uv --directory "$TOOL_DIR" sync --quiet --no-editable
         uv run --project "$TOOL_DIR" ai-job-summary --config "$CONFIG_PATH" --validate
 
@@ -107,7 +110,6 @@ runs:
         [ -n "$JOB_URL" ]  && CMD_ARGS+=(--job-url "$JOB_URL")
         [ -n "$JOB_NAME" ] && CMD_ARGS+=(--job-name "$JOB_NAME")
 
-        export UV_PROJECT_ENVIRONMENT="$AI_SUMMARY_VENV"
         echo "::group::AI Job Summary"
         uv run --project "$TOOL_DIR" ai-job-summary "${CMD_ARGS[@]}" || {
           echo "::endgroup::"
