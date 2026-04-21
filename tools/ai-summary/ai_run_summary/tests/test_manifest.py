@@ -47,13 +47,16 @@ class TestApplyManifest:
         count = apply_manifest(summary_dir, manifest)
 
         assert count == 1
-        stubs = list(summary_dir.glob("*stub*.json"))
-        assert len(stubs) == 1
-        data = json.loads(stubs[0].read_text())
+        infra_stubs = [
+            f for f in summary_dir.glob("ai_job_summary_*.json")
+            if json.loads(f.read_text()).get("_job", {}).get("status") == "INFRA_FAILURE"
+        ]
+        assert len(infra_stubs) == 1
+        data = json.loads(infra_stubs[0].read_text())
         assert data["_job"]["name"] == "[BH-QB-GE] Llama-3.1-8B-Instruct"
-        assert data["_job"]["status"] == "INFRA_FAILURE"
         assert data["category"] == "infra:runner"
         assert "root_cause" in data
+
 
     def test_all_missing_creates_stub_per_job(self, tmp_path):
         summary_dir = tmp_path / "summaries"
@@ -64,7 +67,7 @@ class TestApplyManifest:
         count = apply_manifest(summary_dir, manifest)
 
         assert count == 3
-        assert len(list(summary_dir.glob("*stub*.json"))) == 3
+        assert len(list(summary_dir.glob("ai_job_summary_*.json"))) == 3
 
     def test_does_not_double_stub_existing_stub(self, tmp_path):
         summary_dir = tmp_path / "summaries"
@@ -75,7 +78,7 @@ class TestApplyManifest:
         count2 = apply_manifest(summary_dir, manifest)
 
         assert count2 == 0
-        assert len(list(summary_dir.glob("*stub*.json"))) == 1
+        assert len(list(summary_dir.glob("ai_job_summary_*.json"))) == 1
 
     def test_empty_manifest_creates_no_stubs(self, tmp_path):
         summary_dir = tmp_path / "summaries"

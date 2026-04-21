@@ -38,17 +38,16 @@ def apply_manifest(summary_dir: Path, manifest_path: Path) -> int:
         name = entry.get("name", "")
         if not name or name in received:
             continue
-        stub_path = summary_dir / f"ai_job_summary_stub_{abs(hash(name))}.json"
+        stub_path = summary_dir / f"ai_job_summary_{abs(hash(name))}.json"
         if stub_path.exists():
             continue
         stub_path.write_text(json.dumps({
             "_job": {
                 "name": name,
-                "url": "",
                 "status": "INFRA_FAILURE",
             },
             "category": "infra:runner",
-            "root_cause": "Job did not start or complete — no summary received",
+            "root_cause": "Runner failed to start — no summary received",
         }, indent=2))
         created += 1
     return created
