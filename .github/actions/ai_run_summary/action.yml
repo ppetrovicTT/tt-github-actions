@@ -205,3 +205,6 @@ runs:
         rm -f "${{ steps.render.outputs.png_file }}"
         [ -n "$REPORT_FILE" ] && rm -f "${REPORT_FILE%.md}.html"
         rm -rf "$AI_SUMMARY_VENV"
+        rm -rf /tmp/ai_manifest
+        rm -rf "${{ steps.config.outputs.summary_dir }}"
+        rm -rf "${{ steps.config.outputs.output_dir }}"
