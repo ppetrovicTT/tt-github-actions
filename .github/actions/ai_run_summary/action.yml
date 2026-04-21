@@ -21,6 +21,10 @@ inputs:
     description: "Slack channel ID (skip Slack if empty)"
     required: false
     default: ""
+  matrix-manifest-artifact:
+    description: "Artifact name containing matrix_manifest.json (list of expected job names). If set, jobs with no summary are stubbed as INFRA_FAILURE."
+    required: false
+    default: ""
 
 outputs:
   report-file:
@@ -80,52 +84,13 @@ runs:
         path: ${{ steps.config.outputs.summary_dir }}
         merge-multiple: true
 
-    - name: Stub INFRA_FAILURE for runner setup failures
-      if: always()
-      shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        SUMMARY_DIR="${{ steps.config.outputs.summary_dir }}"
-        mkdir -p "$SUMMARY_DIR"
-        python3 - "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$SUMMARY_DIR" <<'PYEOF'
-        import sys, json, urllib.request, os
-        repo, run_id, summary_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-        token = os.environ["GH_TOKEN"]
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        req = urllib.request.Request(
-            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100",
-            headers=headers,
-        )
-        with urllib.request.urlopen(req) as r:
-            jobs = json.loads(r.read())["jobs"]
-        for job in jobs:
-            if job.get("conclusion") != "failure":
-                continue
-            steps = job.get("steps", [])
-            # Only stub jobs whose very first step failed (runner never started)
-            if not steps or steps[0].get("conclusion") != "failure":
-                continue
-            stub = os.path.join(summary_dir, f"ai_job_summary_{job['id']}.json")
-            if os.path.exists(stub):
-                continue
-            data = {
-                "_job": {
-                    "name": job["name"],
-                    "url": job.get("html_url", ""),
-                    "status": "INFRA_FAILURE",
-                },
-                "category": "infra:runner",
-                "root_cause": "Runner setup failed — job never started, no logs collected",
-            }
-            with open(stub, "w") as f:
-                json.dump(data, f, indent=2)
-            print(f"Stub created: {job['name']}")
-        PYEOF
+    - name: Download matrix manifest
+      if: inputs.matrix-manifest-artifact != ''
+      uses: actions/download-artifact@v4
+      continue-on-error: true
+      with:
+        name: ${{ inputs.matrix-manifest-artifact }}
+        path: /tmp/ai_manifest
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -150,8 +115,11 @@ runs:
         STDERR_FILE=$(mktemp)
         trap 'rm -f "$STDERR_FILE"' EXIT
 
+        CMD_ARGS=(--config "$CONFIG_PATH")
+        [ -f "/tmp/ai_manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai_manifest/matrix_manifest.json")
+
         echo "::group::AI Run Summary"
-        uv run --project "$TOOL_DIR" ai-run-summary --config "$CONFIG_PATH" 2> >(tee "$STDERR_FILE" >&2) || {
+        uv run --project "$TOOL_DIR" ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
           echo "::endgroup::"
           echo "::warning::ai-run-summary failed, check logs"
           echo "report_file=" >> "$GITHUB_OUTPUT"

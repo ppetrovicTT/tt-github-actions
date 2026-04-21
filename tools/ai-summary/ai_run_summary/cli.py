@@ -64,6 +64,8 @@ def main():
         description="Aggregate per-job AI summaries into a run-level report",
     )
     parser.add_argument("--config", required=True, help="Path to project config YAML")
+    parser.add_argument("--manifest", type=Path, default=None,
+                        help="Matrix manifest JSON listing expected jobs (for INFRA_FAILURE stubs)")
 
     args = parser.parse_args()
 
@@ -87,6 +89,13 @@ def main():
         sys.exit(1)
 
     summaries_dir = Path(summary_dir)
+
+    # Apply matrix manifest: stub INFRA_FAILURE for any expected job with no summary
+    if args.manifest and args.manifest.exists():
+        from .manifest import apply_manifest
+        n = apply_manifest(summaries_dir, args.manifest)
+        if n:
+            print(f"Created {n} INFRA_FAILURE stub(s) for jobs with no summary", file=sys.stderr)
 
     # Set model from config
     model = config.get("model", "")
