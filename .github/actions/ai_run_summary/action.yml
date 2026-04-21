@@ -110,7 +110,7 @@ runs:
         CONFIG_PATH="${{ steps.config.outputs.config_path }}"
         TOOL_DIR="${{ steps.config.outputs.tool_dir }}"
 
-        export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
+        export UV_PROJECT_ENVIRONMENT="/tmp/ai-summary-venv"
         uv --directory "$TOOL_DIR" sync --quiet --no-editable
 
         STDERR_FILE=$(mktemp)
@@ -119,7 +119,7 @@ runs:
         CMD_ARGS=(--config "$CONFIG_PATH")
         [ -f "/tmp/ai_manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai_manifest/matrix_manifest.json")
 
-        export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
+        export UV_PROJECT_ENVIRONMENT="/tmp/ai-summary-venv"
         echo "::group::AI Run Summary"
         uv run --project "$TOOL_DIR" ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
           echo "::endgroup::"
