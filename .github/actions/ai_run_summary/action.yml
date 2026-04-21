@@ -109,14 +109,15 @@ runs:
       id: summarize
       shell: bash
       env:
-        UV_CACHE_DIR: /tmp/ai-summary/cache
-        UV_TOOL_DIR: /tmp/ai-summary/tools
-        UV_TOOL_BIN_DIR: /tmp/ai-summary/bin
         TT_CHAT_API_KEY: ${{ inputs.api-key }}
         TT_CHAT_URL: ${{ inputs.api-url }}
       run: |
         CONFIG_PATH="${{ steps.config.outputs.config_path }}"
         TOOL_DIR="${{ steps.config.outputs.tool_dir }}"
+
+        # ubuntu-latest has no active venv; create one in /tmp (cleaned up below).
+        uv venv --quiet /tmp/ai-summary/venv
+        uv pip install --no-cache --quiet --python /tmp/ai-summary/venv/bin/python "$TOOL_DIR"
 
         STDERR_FILE=$(mktemp)
         trap 'rm -f "$STDERR_FILE"' EXIT
@@ -125,7 +126,7 @@ runs:
         [ -f "/tmp/ai-summary/manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai-summary/manifest/matrix_manifest.json")
 
         echo "::group::AI Run Summary"
-        uvx --from "$TOOL_DIR" ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
+        /tmp/ai-summary/venv/bin/ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
           echo "::endgroup::"
           echo "::warning::ai-run-summary failed, check logs"
           echo "report_file=" >> "$GITHUB_OUTPUT"

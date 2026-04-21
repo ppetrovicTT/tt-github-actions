@@ -34,9 +34,8 @@ runs:
         if [[ "$TOOL_CACHE" != *"ppetrovicTT"* && "$TOOL_CACHE" != *"tenstorrent"* ]]; then
           echo "::warning::Unexpected path (no ppetrovicTT or tenstorrent): $TOOL_CACHE — skipping cleanup"
         else
-          echo "Would remove:"
           find "$TOOL_CACHE" \( -name "*.egg-info" -o -name "*.dist-info" -o -name "__pycache__" -o -name ".venv" \) \
-            -maxdepth 4 2>/dev/null || true
+            -maxdepth 4 -exec rm -rf {} + 2>/dev/null || true
         fi
 
     - name: Detect job metadata
@@ -57,16 +56,9 @@ runs:
         echo "job_name=${JOB_NAME}" >> "$GITHUB_OUTPUT"
         echo "job_url=${JOB_URL}" >> "$GITHUB_OUTPUT"
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-
     - name: Setup tool
       id: setup
       shell: bash
-      env:
-        UV_CACHE_DIR: /tmp/ai-summary/cache
-        UV_TOOL_DIR: /tmp/ai-summary/tools
-        UV_TOOL_BIN_DIR: /tmp/ai-summary/bin
       run: |
         CONFIG_PATH="${{ inputs.config-path }}"
         [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$GITHUB_WORKSPACE/$CONFIG_PATH"
@@ -92,35 +84,31 @@ runs:
           exit 1
         fi
 
-        TOOL_SRC="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
-        if [ ! -f "$TOOL_SRC/pyproject.toml" ]; then
-          echo "::error::Tool not found at $TOOL_SRC (missing pyproject.toml)"
+        TOOL_DIR="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
+        if [ ! -f "$TOOL_DIR/pyproject.toml" ]; then
+          echo "::error::Tool not found at $TOOL_DIR (missing pyproject.toml)"
           exit 1
         fi
 
-        # Copy tool source to /tmp so uvx never writes build artifacts back
-        # to the host-mounted action cache (which would leave root-owned files).
-        TOOL_DIR="/tmp/ai-summary/src"
-        cp -r "$TOOL_SRC" "$TOOL_DIR"
+        # uv is pre-installed in the container image (dockerfile/Dockerfile).
+        # Install into the container's active venv (/opt/venv, set via VIRTUAL_ENV).
+        # --no-cache prevents any writes outside the venv; the build backend uses
+        # the OS temp dir. Nothing is written back to TOOL_DIR (the action cache).
+        uv pip install --no-cache --quiet "$TOOL_DIR"
+        ai-job-summary --config "$CONFIG_PATH" --validate
 
         [[ "$OUTPUT_DIR" != /* ]] && OUTPUT_DIR="$GITHUB_WORKSPACE/$OUTPUT_DIR"
         echo "tool_dir=$TOOL_DIR" >> "$GITHUB_OUTPUT"
         echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
-        uvx --from "$TOOL_DIR" ai-job-summary --config "$CONFIG_PATH" --validate
-
     - name: AI job summary
       id: summarize
       shell: bash
       env:
-        UV_CACHE_DIR: /tmp/ai-summary/cache
-        UV_TOOL_DIR: /tmp/ai-summary/tools
-        UV_TOOL_BIN_DIR: /tmp/ai-summary/bin
         TT_CHAT_API_KEY: ${{ inputs.api-key }}
         TT_CHAT_URL: ${{ inputs.api-url }}
       run: |
         CONFIG_PATH="${{ steps.setup.outputs.config_path }}"
-        TOOL_DIR="${{ steps.setup.outputs.tool_dir }}"
         OUTPUT_DIR="${{ steps.setup.outputs.output_dir }}"
         JOB_NAME="${{ steps.job-meta.outputs.job_name }}"
         JOB_URL="${{ steps.job-meta.outputs.job_url }}"
@@ -130,7 +118,7 @@ runs:
         [ -n "$JOB_NAME" ] && CMD_ARGS+=(--job-name "$JOB_NAME")
 
         echo "::group::AI Job Summary"
-        uvx --from "$TOOL_DIR" ai-job-summary "${CMD_ARGS[@]}" || {
+        ai-job-summary "${CMD_ARGS[@]}" || {
           echo "::endgroup::"
           echo "::warning::ai-job-summary failed, check logs"
           echo "summary_dir=" >> "$GITHUB_OUTPUT"
@@ -158,8 +146,3 @@ runs:
         path: |
           ${{ steps.summarize.outputs.summary_dir }}/*.json
           ${{ steps.summarize.outputs.summary_dir }}/*.md
-
-    - name: Cleanup temporary files
-      if: always()
-      shell: bash
-      run: rm -rf /tmp/ai-summary
