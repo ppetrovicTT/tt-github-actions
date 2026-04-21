@@ -30,8 +30,13 @@ runs:
         # Running as root inside the container lets us remove root-owned files
         # that previous buggy runs may have written to the host-mounted action cache.
         TOOL_CACHE="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
-        find "$TOOL_CACHE" \( -name "*.egg-info" -o -name "*.dist-info" -o -name "__pycache__" -o -name ".venv" \) \
-          -maxdepth 4 -exec rm -rf {} + 2>/dev/null || true
+        echo "Action cache tool path: $TOOL_CACHE"
+        if [[ "$TOOL_CACHE" != *"ppetrovicTT"* && "$TOOL_CACHE" != *"tenstorrent"* ]]; then
+          echo "::warning::Unexpected path (no ppetrovicTT or tenstorrent): $TOOL_CACHE — skipping cleanup"
+        else
+          find "$TOOL_CACHE" \( -name "*.egg-info" -o -name "*.dist-info" -o -name "__pycache__" -o -name ".venv" \) \
+            -maxdepth 4 -exec rm -rf {} + 2>/dev/null || true
+        fi
 
     - name: Detect job metadata
       id: job-meta
