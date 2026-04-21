@@ -10,7 +10,7 @@ import yaml
 
 def find_package_config_dir() -> Path:
     """Find the package's config directory."""
-    return Path(__file__).resolve().parent.parent / "config"
+    return Path(__file__).resolve().parent / "config"
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

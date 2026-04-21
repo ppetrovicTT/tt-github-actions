@@ -26,6 +26,9 @@ ai-run-summary = "ai_run_summary.cli:main"
 where = ["."]
 include = ["ai_job_summary*", "ai_run_summary*", "common*"]
 
+[tool.setuptools.package-data]
+ai_job_summary = ["config/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["ai_job_summary/tests", "ai_run_summary/tests"]
 pythonpath = ["."]
