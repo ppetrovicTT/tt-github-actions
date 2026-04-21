@@ -1,0 +1,133 @@
+name: AI Job Summary
+description: Use AI to summarize CI job logs
+
+inputs:
+  config-path:
+    description: "Path to workflow config YAML (defines log_dirs, output_dir)"
+    required: true
+  api-key:
+    description: "LLM API key (secret)"
+    required: true
+  api-url:
+    description: "LLM API URL"
+    required: true
+  job-name:
+    description: "Job name for the summary header (defaults to GitHub Actions job.name)"
+    required: false
+
+outputs:
+  summary-dir:
+    description: Directory containing ai_job_summary_<numeric-job-id>.md and .json
+    value: ${{ steps.summarize.outputs.summary_dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect job metadata
+      id: job-meta
+      shell: bash
+      env:
+        CHECK_RUN_ID: ${{ job.check_run_id }}
+        JOB_NAME: ${{ inputs.job-name || job.name }}
+      run: |
+        JOB_ID="${CHECK_RUN_ID:-${GITHUB_RUN_ID}_${GITHUB_JOB}}"
+        JOB_URL=""
+        if [ -n "$CHECK_RUN_ID" ] && [ -n "$GITHUB_SERVER_URL" ] && [ -n "$GITHUB_REPOSITORY" ] && [ -n "$GITHUB_RUN_ID" ]; then
+          JOB_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/job/${CHECK_RUN_ID}"
+        elif [ -n "$GITHUB_SERVER_URL" ] && [ -n "$GITHUB_REPOSITORY" ] && [ -n "$GITHUB_RUN_ID" ]; then
+          JOB_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        fi
+        echo "job_id=${JOB_ID}" >> "$GITHUB_OUTPUT"
+        echo "job_name=${JOB_NAME}" >> "$GITHUB_OUTPUT"
+        echo "job_url=${JOB_URL}" >> "$GITHUB_OUTPUT"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Setup tool
+      id: setup
+      shell: bash
+      run: |
+        CONFIG_PATH="${{ inputs.config-path }}"
+        [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$GITHUB_WORKSPACE/$CONFIG_PATH"
+        if [ ! -f "$CONFIG_PATH" ]; then
+          echo "::error::Config file not found: $CONFIG_PATH"
+          exit 1
+        fi
+        echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
+
+        if python3 -c "import yaml,sys; c=yaml.safe_load(open(sys.argv[1])); sys.exit(1 if 'tool_dir' in c else 0)" "$CONFIG_PATH" 2>/dev/null; then
+          :
+        else
+          echo "::error::tool_dir is no longer supported. The action resolves the tool path automatically."
+          exit 1
+        fi
+
+        OUTPUT_DIR=$(python3 -c "import yaml,sys; c=yaml.safe_load(open(sys.argv[1])); print(c.get('job_summary',{}).get('output_dir',''))" "$CONFIG_PATH") || {
+          echo "::error::Failed to parse config YAML: $CONFIG_PATH"
+          exit 1
+        }
+        if [ -z "$OUTPUT_DIR" ]; then
+          echo "::error::job_summary.output_dir not defined in $CONFIG_PATH"
+          exit 1
+        fi
+
+        TOOL_DIR="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
+        if [ ! -f "$TOOL_DIR/pyproject.toml" ]; then
+          echo "::error::Tool not found at $TOOL_DIR (missing pyproject.toml)"
+          exit 1
+        fi
+
+        [[ "$OUTPUT_DIR" != /* ]] && OUTPUT_DIR="$GITHUB_WORKSPACE/$OUTPUT_DIR"
+        echo "tool_dir=$TOOL_DIR" >> "$GITHUB_OUTPUT"
+        echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+        uv --directory "$TOOL_DIR" sync --quiet
+        uv run --project "$TOOL_DIR" ai-job-summary --config "$CONFIG_PATH" --validate
+
+    - name: AI job summary
+      id: summarize
+      shell: bash
+      env:
+        TT_CHAT_API_KEY: ${{ inputs.api-key }}
+        TT_CHAT_URL: ${{ inputs.api-url }}
+      run: |
+        CONFIG_PATH="${{ steps.setup.outputs.config_path }}"
+        TOOL_DIR="${{ steps.setup.outputs.tool_dir }}"
+        OUTPUT_DIR="${{ steps.setup.outputs.output_dir }}"
+        JOB_NAME="${{ steps.job-meta.outputs.job_name }}"
+        JOB_URL="${{ steps.job-meta.outputs.job_url }}"
+
+        CMD_ARGS=(--config "$CONFIG_PATH")
+        [ -n "$JOB_URL" ]  && CMD_ARGS+=(--job-url "$JOB_URL")
+        [ -n "$JOB_NAME" ] && CMD_ARGS+=(--job-name "$JOB_NAME")
+
+        echo "::group::AI Job Summary"
+        uv run --project "$TOOL_DIR" ai-job-summary "${CMD_ARGS[@]}" || {
+          echo "::endgroup::"
+          echo "::warning::ai-job-summary failed, check logs"
+          echo "summary_dir=" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+        echo "::endgroup::"
+        echo "summary_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+        MD_FILE=$(find "$OUTPUT_DIR" -name "*.md" -type f | head -1)
+        if [ -n "$MD_FILE" ]; then
+          echo ""
+          echo "========================================"
+          echo "          AI JOB SUMMARY"
+          echo "========================================"
+          cat "$MD_FILE"
+          echo "========================================"
+        fi
+
+    - name: Upload AI summary
+      if: always() && !cancelled() && steps.summarize.outputs.summary_dir != ''
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: ai_job_summary_${{ steps.job-meta.outputs.job_id }}
+        path: |
+          ${{ steps.summarize.outputs.summary_dir }}/*.json
+          ${{ steps.summarize.outputs.summary_dir }}/*.md
