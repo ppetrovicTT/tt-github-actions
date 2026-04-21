@@ -119,7 +119,7 @@ runs:
         VENV=/tmp/ai-summary/venv
         uv venv --quiet "$VENV"
         uv pip install --no-cache --quiet --python "$VENV/bin/python" "$TOOL_DIR"
-        source "$VENV/bin/activate"
+        PATH="$VENV/bin:$PATH"
 
         STDERR_FILE=$(mktemp)
         trap 'rm -f "$STDERR_FILE"' EXIT
