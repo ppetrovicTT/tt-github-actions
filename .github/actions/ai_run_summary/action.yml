@@ -116,8 +116,10 @@ runs:
         TOOL_DIR="${{ steps.config.outputs.tool_dir }}"
 
         # ubuntu-latest has no active venv; create one in /tmp (cleaned up below).
-        uv venv --quiet /tmp/ai-summary/venv
-        uv pip install --no-cache --quiet --python /tmp/ai-summary/venv/bin/python "$TOOL_DIR"
+        VENV=/tmp/ai-summary/venv
+        uv venv --quiet "$VENV"
+        uv pip install --no-cache --quiet --python "$VENV/bin/python" "$TOOL_DIR"
+        source "$VENV/bin/activate"
 
         STDERR_FILE=$(mktemp)
         trap 'rm -f "$STDERR_FILE"' EXIT
@@ -126,7 +128,7 @@ runs:
         [ -f "/tmp/ai-summary/manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai-summary/manifest/matrix_manifest.json")
 
         echo "::group::AI Run Summary"
-        /tmp/ai-summary/venv/bin/ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
+        ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
           echo "::endgroup::"
           echo "::warning::ai-run-summary failed, check logs"
           echo "report_file=" >> "$GITHUB_OUTPUT"
