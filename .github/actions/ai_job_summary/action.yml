@@ -76,11 +76,16 @@ runs:
           exit 1
         fi
 
-        TOOL_DIR="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
-        if [ ! -f "$TOOL_DIR/pyproject.toml" ]; then
-          echo "::error::Tool not found at $TOOL_DIR (missing pyproject.toml)"
+        TOOL_SRC="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
+        if [ ! -f "$TOOL_SRC/pyproject.toml" ]; then
+          echo "::error::Tool not found at $TOOL_SRC (missing pyproject.toml)"
           exit 1
         fi
+
+        # Copy tool source to /tmp so uvx never writes build artifacts back
+        # to the host-mounted action cache (which would leave root-owned files).
+        TOOL_DIR="/tmp/ai-summary/src"
+        cp -r "$TOOL_SRC" "$TOOL_DIR"
 
         [[ "$OUTPUT_DIR" != /* ]] && OUTPUT_DIR="$GITHUB_WORKSPACE/$OUTPUT_DIR"
         echo "tool_dir=$TOOL_DIR" >> "$GITHUB_OUTPUT"
