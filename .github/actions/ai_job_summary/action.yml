@@ -82,6 +82,7 @@ runs:
         echo "tool_dir=$TOOL_DIR" >> "$GITHUB_OUTPUT"
         echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
+        export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
         uv --directory "$TOOL_DIR" sync --quiet
         uv run --project "$TOOL_DIR" ai-job-summary --config "$CONFIG_PATH" --validate
 
@@ -102,6 +103,7 @@ runs:
         [ -n "$JOB_URL" ]  && CMD_ARGS+=(--job-url "$JOB_URL")
         [ -n "$JOB_NAME" ] && CMD_ARGS+=(--job-name "$JOB_NAME")
 
+        export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
         echo "::group::AI Job Summary"
         uv run --project "$TOOL_DIR" ai-job-summary "${CMD_ARGS[@]}" || {
           echo "::endgroup::"
