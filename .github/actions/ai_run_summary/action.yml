@@ -90,11 +90,11 @@ runs:
       continue-on-error: true
       with:
         name: ${{ inputs.matrix-manifest }}
-        path: /tmp/ai_manifest
+        path: /tmp/ai-summary/manifest
 
     - name: Set venv path
       shell: bash
-      run: echo "AI_SUMMARY_VENV=/tmp/ai-summary-venv" >> "$GITHUB_ENV"
+      run: echo "AI_SUMMARY_VENV=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -121,7 +121,7 @@ runs:
         trap 'rm -f "$STDERR_FILE"' EXIT
 
         CMD_ARGS=(--config "$CONFIG_PATH")
-        [ -f "/tmp/ai_manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai_manifest/matrix_manifest.json")
+        [ -f "/tmp/ai-summary/manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai-summary/manifest/matrix_manifest.json")
 
         export UV_PROJECT_ENVIRONMENT="$AI_SUMMARY_VENV"
         echo "::group::AI Run Summary"
@@ -204,7 +204,6 @@ runs:
       run: |
         rm -f "${{ steps.render.outputs.png_file }}"
         [ -n "$REPORT_FILE" ] && rm -f "${REPORT_FILE%.md}.html"
-        rm -rf "$AI_SUMMARY_VENV"
-        rm -rf /tmp/ai_manifest
+        rm -rf /tmp/ai-summary
         rm -rf "${{ steps.config.outputs.summary_dir }}"
         rm -rf "${{ steps.config.outputs.output_dir }}"

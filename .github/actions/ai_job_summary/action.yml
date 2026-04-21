@@ -43,7 +43,7 @@ runs:
 
     - name: Set venv path
       shell: bash
-      run: echo "AI_SUMMARY_VENV=/tmp/ai-summary-venv" >> "$GITHUB_ENV"
+      run: echo "AI_SUMMARY_VENV=/tmp/ai-summary/venv" >> "$GITHUB_ENV"
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -141,4 +141,4 @@ runs:
     - name: Cleanup temporary files
       if: always()
       shell: bash
-      run: rm -rf "$AI_SUMMARY_VENV"
+      run: rm -rf /tmp/ai-summary
