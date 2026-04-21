@@ -21,7 +21,7 @@ inputs:
     description: "Slack channel ID (skip Slack if empty)"
     required: false
     default: ""
-  matrix-manifest-artifact:
+  matrix-manifest:
     description: "Artifact name containing matrix_manifest.json (list of expected job names). If set, jobs with no summary are stubbed as INFRA_FAILURE."
     required: false
     default: ""
@@ -85,11 +85,11 @@ runs:
         merge-multiple: true
 
     - name: Download matrix manifest
-      if: inputs.matrix-manifest-artifact != ''
+      if: inputs.matrix-manifest != ''
       uses: actions/download-artifact@v4
       continue-on-error: true
       with:
-        name: ${{ inputs.matrix-manifest-artifact }}
+        name: ${{ inputs.matrix-manifest }}
         path: /tmp/ai_manifest
 
     - name: Install uv
