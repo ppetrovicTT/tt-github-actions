@@ -200,3 +200,4 @@ runs:
       run: |
         rm -f "${{ steps.render.outputs.png_file }}"
         [ -n "$REPORT_FILE" ] && rm -f "${REPORT_FILE%.md}.html"
+        rm -rf /tmp/ai-summary-venv

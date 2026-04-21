@@ -133,3 +133,8 @@ runs:
         path: |
           ${{ steps.summarize.outputs.summary_dir }}/*.json
           ${{ steps.summarize.outputs.summary_dir }}/*.md
+
+    - name: Cleanup temporary files
+      if: always()
+      shell: bash
+      run: rm -rf /tmp/ai-summary-venv
