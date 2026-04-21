@@ -94,3 +94,12 @@ class TestApplyManifest:
         count = apply_manifest(summary_dir, manifest)
 
         assert count == 2
+
+    def test_creates_summary_dir_if_missing(self, tmp_path):
+        summary_dir = tmp_path / "summaries_nonexistent"
+        manifest = _write_manifest(tmp_path, ["[A] job"])
+
+        count = apply_manifest(summary_dir, manifest)
+
+        assert count == 1
+        assert summary_dir.is_dir()

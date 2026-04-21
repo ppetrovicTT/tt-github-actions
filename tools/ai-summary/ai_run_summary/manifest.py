@@ -32,6 +32,7 @@ def apply_manifest(summary_dir: Path, manifest_path: Path) -> int:
     expected: list[dict] = json.loads(manifest_path.read_text())
     received = _received_job_names(summary_dir)
 
+    summary_dir.mkdir(parents=True, exist_ok=True)
     created = 0
     for entry in expected:
         name = entry.get("name", "")
