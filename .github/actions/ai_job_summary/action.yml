@@ -83,7 +83,7 @@ runs:
         echo "output_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
 
         export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
-        uv --directory "$TOOL_DIR" sync --quiet
+        uv --directory "$TOOL_DIR" sync --quiet --no-editable
         uv run --project "$TOOL_DIR" ai-job-summary --config "$CONFIG_PATH" --validate
 
     - name: AI job summary

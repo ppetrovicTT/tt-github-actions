@@ -111,7 +111,7 @@ runs:
         TOOL_DIR="${{ steps.config.outputs.tool_dir }}"
 
         export UV_PROJECT_ENVIRONMENT="${RUNNER_TEMP}/ai-summary-venv"
-        uv --directory "$TOOL_DIR" sync --quiet
+        uv --directory "$TOOL_DIR" sync --quiet --no-editable
 
         STDERR_FILE=$(mktemp)
         trap 'rm -f "$STDERR_FILE"' EXIT
