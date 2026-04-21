@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ai-job-summary"
@@ -22,12 +22,8 @@ dev = [
 ai-job-summary = "ai_job_summary.cli:main"
 ai-run-summary = "ai_run_summary.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["ai_job_summary*", "ai_run_summary*", "common*"]
-
-[tool.setuptools.package-data]
-ai_job_summary = ["config/*.yaml"]
+[tool.hatch.build.targets.wheel]
+packages = ["ai_job_summary", "ai_run_summary", "common"]
 
 [tool.pytest.ini_options]
 testpaths = ["ai_job_summary/tests", "ai_run_summary/tests"]
