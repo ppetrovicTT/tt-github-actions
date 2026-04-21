@@ -1,0 +1,25 @@
+name: Test ai_summary tool
+
+on:
+  push:
+    paths:
+      - 'tools/ai-summary/**'
+      - '.github/actions/ai_job_summary/**'
+      - '.github/actions/ai_run_summary/**'
+      - '.github/workflows/test_ai_summary.yml'
+  pull_request:
+    paths:
+      - 'tools/ai-summary/**'
+      - '.github/actions/ai_job_summary/**'
+      - '.github/actions/ai_run_summary/**'
+      - '.github/workflows/test_ai_summary.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Run tests
+        run: uv run pytest -v
+        working-directory: tools/ai-summary
