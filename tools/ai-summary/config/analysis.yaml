@@ -67,6 +67,8 @@ categories:
       - "ttSiliconDevice"
       - "physical_device_id"
       - "device initialization"
+      - "Requested mesh grid shape"
+      - "number of available devices"
     action: "Check device state, may need machine reset"
     severity: high
 
@@ -156,6 +158,8 @@ categories:
       - "LLMEngine"
       - "engine.py"
       - "run_mp_engine"
+      - "Traceback (most recent call last)"
+      - "AssertionError"
 
   vllm:worker:
     description: "vLLM worker process errors"
