@@ -174,6 +174,32 @@ class TestMain:
         assert report.exists()
         assert "77777" in report.read_text()
 
+    def test_expected_jobs_without_run_result_warns(self, tmp_path, capsys):
+        self._write_summaries(tmp_path)
+        config_path = self._write_config(
+            tmp_path, summary_dir=str(tmp_path), output_dir=str(tmp_path), model="none"
+        )
+        argv = ["ai-run-summary", "--config", str(config_path),
+                "--expected-jobs", '[{"name":"X"}]']
+        with patch("sys.argv", argv):
+            main()
+        stderr = capsys.readouterr().err
+        assert "::warning::" in stderr
+        assert "must be passed together" in stderr
+
+    def test_run_result_without_expected_jobs_warns(self, tmp_path, capsys):
+        self._write_summaries(tmp_path)
+        config_path = self._write_config(
+            tmp_path, summary_dir=str(tmp_path), output_dir=str(tmp_path), model="none"
+        )
+        argv = ["ai-run-summary", "--config", str(config_path),
+                "--run-result", "failure"]
+        with patch("sys.argv", argv):
+            main()
+        stderr = capsys.readouterr().err
+        assert "::warning::" in stderr
+        assert "must be passed together" in stderr
+
 
 class TestSynthesizeMissingLegs:
     """Expected-jobs reconciliation: stubs INFRA_FAILURE for missing artifacts."""
@@ -284,3 +310,12 @@ class TestSynthesizeMissingLegs:
         files_a = sorted(f.name for f in dir_a.glob("*.json"))
         files_b = sorted(f.name for f in dir_b.glob("*.json"))
         assert files_a == files_b
+
+    def test_different_names_produce_different_slugs(self, tmp_path):
+        # Collision guard: distinct names must produce distinct stub filenames,
+        # otherwise the second write silently overwrites the first.
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+        synthesize_missing_legs(tmp_path, expected, run_result="failure")
+        files = list(tmp_path.glob("*.json"))
+        assert len(files) == 2
+        assert len({f.name for f in files}) == 2

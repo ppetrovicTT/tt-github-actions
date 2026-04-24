@@ -565,7 +565,10 @@ class TestErrorSectionDedup:
     def test_dedup_multiline_real_format(self):
         # Real-format sections: line-number prefix from extract_log (`{j+1}: `)
         # and equals-form PIDs like "(EngineCore_DP0 pid=197)" that appear in
-        # actual vLLM/tt-metal logs.
+        # actual vLLM/tt-metal logs. The strip of the line-number prefix
+        # happens inside _dedupe_error_sections (via _normalize_section_line);
+        # this test exercises that wiring with inputs shaped exactly as
+        # extract_log produces them.
         from ai_job_summary.extract import _dedupe_error_sections
         sections = [
             "100: 2026-04-24T10:00:00 (EngineCore_DP0 pid=197) RuntimeError: TT_FATAL\n"
