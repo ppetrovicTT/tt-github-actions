@@ -138,14 +138,16 @@ def main():
         description="Aggregate per-job AI summaries into a run-level report",
     )
     parser.add_argument("--config", required=True, help="Path to project config YAML")
-    parser.add_argument("--jobs-filter", type=str, default="",
-                        help="Substring filter applied to GHA job names to identify "
-                             "matrix legs (e.g. 'vllm-tests / '). When set, the tool "
-                             "reads the GHA jobs list from the GHA_JOBS environment "
-                             "variable and uses it as the authoritative source for "
-                             "per-leg status (drops cancelled legs, stubs INFRA_FAILURE "
-                             "for failed legs with no summary, overrides SUCCESS to "
-                             "INFRA_FAILURE when GHA conclusion is failure).")
+    parser.add_argument("--expected-jobs", type=str, default="",
+                        help="JSON array of expected matrix legs (from "
+                             "needs.<matrix-job>.outputs.matrix). Each entry must "
+                             "have a 'name' field. Used to synthesize INFRA_FAILURE "
+                             "stubs for legs that produced no artifact.")
+    parser.add_argument("--run-result", type=str, default="",
+                        help="Aggregate result of the matrix job from "
+                             "needs.<matrix-job>.result: 'success' | 'failure' | "
+                             "'cancelled' | 'skipped'. No stubs are synthesized "
+                             "when 'cancelled'.")
 
     args = parser.parse_args()
 
@@ -170,18 +172,15 @@ def main():
 
     summaries_dir = Path(summary_dir)
 
-    # Reconcile with the GHA jobs list (from GHA_JOBS env var): authoritative
-    # per-leg status. Only active when --jobs-filter is set.
-    gha_jobs = os.environ.get("GHA_JOBS", "").strip()
-    if args.jobs_filter and gha_jobs:
-        from .jobs_list import apply_jobs_list
-        stats = apply_jobs_list(summaries_dir, gha_jobs, jobs_filter=args.jobs_filter)
-        if stats["cancelled_dropped"]:
-            print(f"Dropped {stats['cancelled_dropped']} cancelled leg(s) from report", file=sys.stderr)
+    # Synthesize INFRA_FAILURE stubs for expected matrix legs that produced no
+    # artifact. Skipped when run_result=cancelled (user cancelled; don't fabricate
+    # rows for legs that never ran).
+    if args.expected_jobs and args.run_result:
+        stats = synthesize_missing_legs(
+            summaries_dir, args.expected_jobs, run_result=args.run_result,
+        )
         if stats["infra_stubbed"]:
-            print(f"Stubbed {stats['infra_stubbed']} INFRA_FAILURE leg(s) with no summary", file=sys.stderr)
-        if stats["success_overridden"]:
-            print(f"Overrode SUCCESS -> INFRA_FAILURE for {stats['success_overridden']} leg(s) (GHA says failure)",
+            print(f"Stubbed {stats['infra_stubbed']} INFRA_FAILURE leg(s) with no summary",
                   file=sys.stderr)
 
     # Set model from config
