@@ -37,7 +37,6 @@ _STATUS_PRIORITY: dict[str, int] = {
     "FAILED": 1,
     "TESTS_FAILED": 2,
     "EVALS_BELOW_TARGET": 3,
-    "UNKNOWN": 4,
     "SUCCESS": 5,
 }
 

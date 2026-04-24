@@ -138,12 +138,13 @@ Every job ends up with one of these statuses:
 | **SUCCESS** | 🟢 | Tests passed, no errors |
 | **TESTS_FAILED** | 🟠 | Tests ran, some failed |
 | **EVALS_BELOW_TARGET** | 🟡 | Tests passed but accuracy too low |
-| **CRASHED** | 🔴 | Process died — TT_FATAL, segfault, OOM |
+| **CRASHED** | 🔴 | Process died — TT_FATAL, segfault, uncaught exception |
 | **TIMEOUT** | 🔴 | Hung or exceeded time budget |
-| **INFRA_FAILURE** | ⚫ | Runner died, no logs produced |
-| **UNKNOWN** | ⚪ | Tool couldn't classify |
+| **FAILED** | 🔴 | Non-zero exit, no specific signal matched |
+| **INFRA_FAILURE** | 🟣 | Runner died, missing logs, or no artifact produced |
 
-This is what downstream sees. No ambiguous "failure" label.
+The *status* axis is always one of the above. Classification ambiguity lives
+in the separate *category* field (`unknown` when LLM can't pin a root cause).
 
 ---
 

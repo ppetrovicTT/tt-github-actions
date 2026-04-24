@@ -17,7 +17,6 @@ STATUS_EMOJI: dict[str, str] = {
     "FAILED": "🔴",
     "EVALS_BELOW_TARGET": "🟡",
     "INFRA_FAILURE": "🟣",
-    "UNKNOWN": "❓",
 }
 
 NON_FAILURE_STATUSES: frozenset[str] = frozenset({"SUCCESS"})
@@ -28,9 +27,15 @@ def resolve_status(status_text: str) -> str:
 
     Handles suffixed statuses like 'TESTS FAILED (3 failed)' and
     inconsistent formatting like 'INFRA_FAILURE' (underscore).
+
+    Unrecognized or missing statuses collapse to FAILED — we know the job
+    isn't a success (otherwise it would have said so) but the tool that
+    produced the artifact gave us a label we can't map. The category field
+    can still carry "unknown" for LLM-classified root-cause uncertainty;
+    the *status* axis is explicitly non-UNKNOWN.
     """
     if not status_text:
-        return "UNKNOWN"
+        return "FAILED"
     t = status_text.strip().upper()
     if t.startswith("CRASHED"):
         return "CRASHED"
@@ -46,7 +51,7 @@ def resolve_status(status_text: str) -> str:
         return "FAILED"
     if t == "SUCCESS":
         return "SUCCESS"
-    return "UNKNOWN"
+    return "FAILED"
 
 
 @dataclass

@@ -34,11 +34,12 @@ class TestParseJsonSummary:
         f.write_text(json.dumps(data))
         assert parse_json_summary(f).status == "INFRA_FAILURE"
 
-    def test_status_unknown_when_missing(self, tmp_path):
+    def test_missing_status_collapses_to_failed(self, tmp_path):
+        # UNKNOWN is no longer a valid status; missing status becomes FAILED.
         data = {"_job": {}}
         f = tmp_path / "t.json"
         f.write_text(json.dumps(data))
-        assert parse_json_summary(f).status == "UNKNOWN"
+        assert parse_json_summary(f).status == "FAILED"
 
     def test_job_id_extracted_from_url(self, tmp_path):
         data = {"_job": {"url": "https://github.com/org/repo/actions/runs/1/job/99"}}
