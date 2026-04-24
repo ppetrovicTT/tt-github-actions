@@ -508,3 +508,57 @@ class TestHasCrashPythonExceptions:
 
     def test_does_not_match_upper_error_log_level(self, tmp_path):
         assert not self._run("ERROR: nightly job finished\n", tmp_path)
+
+
+# ── error-section dedup ───────────────────────────────────────────────────────
+
+
+class TestErrorSectionDedup:
+    """Identical error sections collapse to one with a count marker."""
+
+    def test_identical_sections_collapse_with_count(self):
+        # Test the dedup helper directly: three sections with identical
+        # normalized content (timestamps/PIDs/addresses differ) collapse to one.
+        from ai_job_summary.extract import _dedupe_error_sections
+        sections = [
+            "2026-04-24T10:00:00 pid: 123 tid: 456 AttributeError: bad",
+            "2026-04-24T10:00:01 pid: 124 tid: 457 AttributeError: bad",
+            "2026-04-24T10:00:02 pid: 125 tid: 458 AttributeError: bad",
+        ]
+        result = _dedupe_error_sections(sections)
+        assert len(result) == 1
+        assert "2 identical occurrences omitted" in result[0]
+
+    def test_dedup_keeps_distinct_sections(self):
+        from ai_job_summary.extract import _dedupe_error_sections
+        sections = ["AttributeError: first", "KeyError: second"]
+        result = _dedupe_error_sections(sections)
+        assert len(result) == 2
+        assert "omitted" not in "\n".join(result)
+
+    def test_dedup_mixed(self):
+        from ai_job_summary.extract import _dedupe_error_sections
+        sections = [
+            "2026-04-24T10:00:00 AttributeError: bad",
+            "KeyError: different",
+            "2026-04-24T10:00:01 AttributeError: bad",
+            "2026-04-24T10:00:02 AttributeError: bad",
+        ]
+        result = _dedupe_error_sections(sections)
+        assert len(result) == 2
+        # First kept section annotated with 2 duplicates
+        assert "2 identical occurrences omitted" in result[0]
+        assert result[1] == "KeyError: different"
+
+    def test_distinct_sections_are_kept(self, tmp_path):
+        # extract_log merges sections within ±context_lines (5 default) of each
+        # other. Use filler lines so the two errors land in separate sections.
+        filler = "\n".join(f"line{i}" for i in range(30)) + "\n"
+        log = tmp_path / "server.log"
+        log.write_text(
+            "AttributeError: first problem\n"
+            + filler
+            + "KeyError: second problem\n"
+        )
+        result = extract_log(tmp_path)
+        assert len(result.error_sections) == 2

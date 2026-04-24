@@ -569,7 +569,7 @@ def extract_log(
             if total_chars >= max_chars:
                 break
 
-    result.error_sections = error_sections
+    result.error_sections = _dedupe_error_sections(error_sections)
 
     # Note: Time-after-error calculation is done in a second pass after LLM identifies
     # the primary error. See calculate_time_after_error() function.
@@ -698,6 +698,38 @@ def _normalize_warning(line: str) -> str:
 def _normalize_error(line: str) -> str:
     """Normalize an error line for deduplication."""
     return _normalize_line(line)[:150]
+
+
+def _dedupe_error_sections(sections: list[str]) -> list[str]:
+    """Collapse identical error sections (modulo timestamps/PIDs/addresses).
+
+    Uses _normalize_line on every line of a section to strip volatile parts
+    (timestamps, PIDs, hex addresses, line numbers), then hashes the joined
+    normalized text. Identical sections collapse to the first occurrence,
+    annotated with '(N identical occurrences omitted)'.
+    """
+    if len(sections) < 2:
+        return sections
+
+    seen: dict[str, int] = {}    # normalized text -> index of first occurrence
+    counts: dict[int, int] = {}  # index -> number of duplicates found after it
+    kept: list[int] = []         # ordered list of indices we keep
+
+    for i, section in enumerate(sections):
+        normalized = "\n".join(_normalize_line(line) for line in section.splitlines())
+        if normalized in seen:
+            counts[seen[normalized]] = counts.get(seen[normalized], 0) + 1
+        else:
+            seen[normalized] = i
+            kept.append(i)
+
+    result: list[str] = []
+    for i in kept:
+        if i in counts:
+            result.append(f"{sections[i]}\n... ({counts[i]} identical occurrences omitted)")
+        else:
+            result.append(sections[i])
+    return result
 
 
 def extract_layer_configs(
