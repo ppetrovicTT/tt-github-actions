@@ -519,6 +519,9 @@ class TestHasCrashPythonExceptions:
         assert not self._run("TypeError: expected str, got None\n", tmp_path)
 
     def test_does_not_match_index_error(self, tmp_path):
+        # IndexError is intentionally excluded — it's routine in iteration
+        # and bounds-check code paths and would false-positive on healthy
+        # test output.
         assert not self._run("IndexError: list index out of range\n", tmp_path)
 
 

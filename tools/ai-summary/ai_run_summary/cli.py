@@ -50,8 +50,11 @@ def _received_names(summary_dir: Path) -> set[str]:
 def _stub_infra(summary_dir: Path, name: str) -> None:
     """Write an INFRA_FAILURE stub for an expected leg that never reported."""
     summary_dir.mkdir(parents=True, exist_ok=True)
-    # Deterministic, collision-resistant filename based on the job name
-    # (Python's built-in hash() is per-process randomized via PYTHONHASHSEED).
+    # Deterministic, collision-resistant filename. Python's built-in hash()
+    # is per-process randomized via PYTHONHASHSEED so would yield different
+    # names every invocation; sha1 gives a stable value. Not security-
+    # sensitive; 16 hex chars = 64 bits, collision probability across a
+    # matrix of < 10k legs is well below anything that could mask a bug.
     slug = hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
     path = summary_dir / f"ai_job_summary_{slug}.json"
     path.write_text(json.dumps({
