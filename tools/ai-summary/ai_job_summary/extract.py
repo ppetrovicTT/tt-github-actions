@@ -385,6 +385,12 @@ def extract_log(
         r"TT_FATAL|TT_THROW|\bpanic\b|Segmentation fault|SIGSEGV",
         full_text, re.IGNORECASE,
     )
+    # Curated list of Python exception names that, when anchored to a line
+    # start (traceback tail), reliably indicate the process died. We
+    # deliberately exclude broader types like ValueError/TypeError/IndexError:
+    # those occur routinely inside pytest/assertion output on otherwise-
+    # healthy test runs and would produce false positives. Extend this list
+    # only when we see a real failure mode that isn't caught today.
     py_crash = re.search(
         r"^(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
         full_text, re.MULTILINE,

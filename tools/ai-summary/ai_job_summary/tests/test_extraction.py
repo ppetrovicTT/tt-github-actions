@@ -509,6 +509,18 @@ class TestHasCrashPythonExceptions:
     def test_does_not_match_upper_error_log_level(self, tmp_path):
         assert not self._run("ERROR: nightly job finished\n", tmp_path)
 
+    def test_does_not_match_value_error(self, tmp_path):
+        # ValueError is intentionally excluded — it occurs routinely in
+        # healthy pytest / validation output and would false-positive.
+        assert not self._run("ValueError: Tasks not found: humaneval\n", tmp_path)
+
+    def test_does_not_match_type_error(self, tmp_path):
+        # TypeError is intentionally excluded — same rationale as ValueError.
+        assert not self._run("TypeError: expected str, got None\n", tmp_path)
+
+    def test_does_not_match_index_error(self, tmp_path):
+        assert not self._run("IndexError: list index out of range\n", tmp_path)
+
 
 # ── error-section dedup ───────────────────────────────────────────────────────
 
