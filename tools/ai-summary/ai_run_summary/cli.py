@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -33,25 +35,26 @@ def _should_call_llm(config: dict) -> bool:
 
 def _received_names(summary_dir: Path) -> set[str]:
     """Return names of jobs that produced an ai-job-summary artifact."""
-    import json as _json
     names: set[str] = set()
     for f in summary_dir.glob("*.json"):
         try:
-            data = _json.loads(f.read_text())
+            data = json.loads(f.read_text())
             name = data.get("_job", {}).get("name", "")
             if name:
                 names.add(name)
-        except (ValueError, OSError):
+        except (json.JSONDecodeError, OSError):
             pass
     return names
 
 
 def _stub_infra(summary_dir: Path, name: str) -> None:
     """Write an INFRA_FAILURE stub for an expected leg that never reported."""
-    import json as _json
     summary_dir.mkdir(parents=True, exist_ok=True)
-    path = summary_dir / f"ai_job_summary_{abs(hash(name))}.json"
-    path.write_text(_json.dumps({
+    # Deterministic, collision-resistant filename based on the job name
+    # (Python's built-in hash() is per-process randomized via PYTHONHASHSEED).
+    slug = hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
+    path = summary_dir / f"ai_job_summary_{slug}.json"
+    path.write_text(json.dumps({
         "_job": {"name": name, "status": "INFRA_FAILURE"},
         "category": "infra:no_artifact",
         "root_cause": (
@@ -65,44 +68,67 @@ def _stub_infra(summary_dir: Path, name: str) -> None:
 
 def synthesize_missing_legs(
     summary_dir: Path,
-    expected_jobs: "str | list[dict] | Path",
+    expected_jobs: "str | list[dict]",
     run_result: str,
 ) -> dict[str, int]:
     """Synthesize INFRA_FAILURE stubs for expected jobs that produced no artifact.
 
+    Contract:
+        Each entry in ``expected_jobs`` must have a ``name`` field whose value
+        is byte-for-byte equal to the ``--job-name`` argument passed to
+        ``ai-job-summary`` in that matrix leg (which becomes ``_job.name`` in
+        the artifact JSON). Example: a matrix entry
+        ``{"name": "[N150] Llama-3.1-8B-Instruct", ...}`` matches an artifact
+        written with ``--job-name "[N150] Llama-3.1-8B-Instruct"``. Duplicate
+        ``name`` values within ``expected_jobs`` are deduplicated.
+
     Args:
         summary_dir:   Directory containing per-leg ai_job_summary_*.json files.
-        expected_jobs: The generate-matrix output. Accepted forms:
-                         - a JSON string (from ${{ needs.x.outputs.matrix }}),
-                         - an already-parsed list of dicts,
-                         - a pathlib.Path to a JSON file (for local use / tests).
-                       Each entry must have a "name" matching _job.name in artifacts.
+        expected_jobs: The generate-matrix output. Either a JSON string (as
+                       passed from ${{ needs.x.outputs.matrix }}) or an
+                       already-parsed list of dicts.
         run_result:    The matrix job's aggregate needs.<>.result:
                        'success' | 'failure' | 'cancelled' | 'skipped'.
-                       Synthesis is skipped when cancelled.
+                       Synthesis is skipped when 'cancelled' (user aborted;
+                       no expectations to meet) or 'skipped' (the whole
+                       matrix was skipped by GHA; nothing ran to compare
+                       against).
 
-    Returns: {"infra_stubbed": n}
+    Returns: {"infra_stubbed": n}. Returns zero-count and logs a stderr
+    warning if ``expected_jobs`` is a malformed JSON string rather than
+    crashing the aggregation step.
     """
-    import json as _json
-    if run_result.lower() == "cancelled":
+    if run_result.lower() in ("cancelled", "skipped"):
         return {"infra_stubbed": 0}
 
-    if isinstance(expected_jobs, Path):
-        jobs = _json.loads(expected_jobs.read_text())
-    elif isinstance(expected_jobs, str):
-        jobs = _json.loads(expected_jobs) if expected_jobs.strip() else []
+    if isinstance(expected_jobs, str):
+        if not expected_jobs.strip():
+            jobs = []
+        else:
+            try:
+                jobs = json.loads(expected_jobs)
+            except json.JSONDecodeError as e:
+                print(f"::warning::--expected-jobs is not valid JSON ({e}); "
+                      f"skipping infra-failure synthesis", file=sys.stderr)
+                return {"infra_stubbed": 0}
     else:
         jobs = expected_jobs
 
     received = _received_names(summary_dir)
-    stubbed = 0
+    # Dedup names within expected_jobs so a matrix with accidental duplicates
+    # doesn't inflate the stub count (and doesn't write the same stub twice).
+    unique_missing: list[str] = []
+    seen: set[str] = set()
     for job in jobs:
         name = job.get("name", "")
-        if not name or name in received:
+        if not name or name in received or name in seen:
             continue
+        seen.add(name)
+        unique_missing.append(name)
+
+    for name in unique_missing:
         _stub_infra(summary_dir, name)
-        stubbed += 1
-    return {"infra_stubbed": stubbed}
+    return {"infra_stubbed": len(unique_missing)}
 
 
 def _resolve_run_metadata() -> dict:
@@ -141,13 +167,17 @@ def main():
     parser.add_argument("--expected-jobs", type=str, default="",
                         help="JSON array of expected matrix legs (from "
                              "needs.<matrix-job>.outputs.matrix). Each entry must "
-                             "have a 'name' field. Used to synthesize INFRA_FAILURE "
-                             "stubs for legs that produced no artifact.")
+                             "have a 'name' field byte-equal to the --job-name "
+                             "passed to ai-job-summary in that leg. Used to "
+                             "synthesize INFRA_FAILURE stubs for legs that "
+                             "produced no artifact. Has no effect unless "
+                             "--run-result is also supplied.")
     parser.add_argument("--run-result", type=str, default="",
                         help="Aggregate result of the matrix job from "
                              "needs.<matrix-job>.result: 'success' | 'failure' | "
                              "'cancelled' | 'skipped'. No stubs are synthesized "
-                             "when 'cancelled'.")
+                             "when 'cancelled' or 'skipped'. Has no effect "
+                             "unless --expected-jobs is also supplied.")
 
     args = parser.parse_args()
 
@@ -173,8 +203,10 @@ def main():
     summaries_dir = Path(summary_dir)
 
     # Synthesize INFRA_FAILURE stubs for expected matrix legs that produced no
-    # artifact. Skipped when run_result=cancelled (user cancelled; don't fabricate
-    # rows for legs that never ran).
+    # artifact. Skipped when run_result=cancelled|skipped (nothing to reconcile).
+    if bool(args.expected_jobs) != bool(args.run_result):
+        print("::warning::--expected-jobs and --run-result must be passed "
+              "together; synthesis is disabled this run", file=sys.stderr)
     if args.expected_jobs and args.run_result:
         stats = synthesize_missing_legs(
             summaries_dir, args.expected_jobs, run_result=args.run_result,

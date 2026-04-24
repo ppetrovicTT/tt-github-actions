@@ -243,3 +243,44 @@ class TestSynthesizeMissingLegs:
         summary_dir = tmp_path / "summaries"
         stats = synthesize_missing_legs(summary_dir, [], run_result="failure")
         assert stats == {"infra_stubbed": 0}
+
+    def test_skipped_run_does_not_synthesize(self, tmp_path):
+        # run_result=skipped means the matrix was gated off — nothing ran,
+        # nothing to reconcile against.
+        summary_dir = tmp_path / "summaries"
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="skipped")
+
+        assert stats == {"infra_stubbed": 0}
+
+    def test_malformed_json_string_warns_and_returns_zero(self, tmp_path, capsys):
+        summary_dir = tmp_path / "summaries"
+
+        stats = synthesize_missing_legs(summary_dir, "{not valid json", run_result="failure")
+
+        assert stats == {"infra_stubbed": 0}
+        captured = capsys.readouterr()
+        assert "::warning::" in captured.err
+        assert "not valid JSON" in captured.err
+
+    def test_duplicate_names_in_expected_counted_once(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Alpha"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="failure")
+
+        assert stats == {"infra_stubbed": 1}
+        files = list(summary_dir.glob("*.json"))
+        assert len(files) == 1
+
+    def test_stub_filename_is_deterministic(self, tmp_path):
+        # Two runs against different directories should produce the same
+        # filename slug for the same job name (no PYTHONHASHSEED randomness).
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        synthesize_missing_legs(dir_a, [{"name": "[N150] Alpha"}], run_result="failure")
+        synthesize_missing_legs(dir_b, [{"name": "[N150] Alpha"}], run_result="failure")
+        files_a = sorted(f.name for f in dir_a.glob("*.json"))
+        files_b = sorted(f.name for f in dir_b.glob("*.json"))
+        assert files_a == files_b
