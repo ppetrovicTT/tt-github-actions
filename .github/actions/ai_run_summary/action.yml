@@ -142,19 +142,6 @@ runs:
         fi
         echo "report_file=$REPORT_FILE" >> "$GITHUB_OUTPUT"
 
-    - name: Show report
-      if: always() && !cancelled() && steps.summarize.outputs.report_file != ''
-      continue-on-error: true
-      shell: bash
-      env:
-        REPORT_FILE: ${{ steps.summarize.outputs.report_file }}
-      run: |
-        if [ -f "$REPORT_FILE" ]; then
-          echo "::group::AI Run Summary"
-          cat "$REPORT_FILE"
-          echo "::endgroup::"
-        fi
-
     - name: Upload run summary
       if: always() && !cancelled() && steps.summarize.outputs.report_file != ''
       continue-on-error: true
@@ -220,4 +207,4 @@ runs:
         [ -n "$REPORT_FILE" ] && rm -f "${REPORT_FILE%.md}.html"
         rm -rf /tmp/ai-summary
         rm -rf "${{ steps.config.outputs.summary_dir }}"
-        rm -rf "${{ steps.config.outputs.output_dir }}"
+        # output_dir is kept so callers can add a Show report step after this action.
