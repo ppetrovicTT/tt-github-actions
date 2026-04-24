@@ -62,7 +62,9 @@ Wrapped by `.github/actions/ai-job-summary/action.yml`.
 
 **Outputs**: `summary-dir`
 
-**Status values**: `SUCCESS`, `CRASHED`, `TIMEOUT`, `TESTS_FAILED`, `EVALS_BELOW_TARGET`, `INFRA_FAILURE`, `UNKNOWN`, `ERROR`
+**Status values**: `SUCCESS`, `CRASHED`, `TIMEOUT`, `TESTS_FAILED`, `EVALS_BELOW_TARGET`, `INFRA_FAILURE`, `ERROR`
+
+Missing-artifact legs synthesized by `ai-run-summary` use `INFRA_FAILURE` with `category: infra:no_artifact`.
 
 ## Status logic
 
