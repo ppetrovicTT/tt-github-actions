@@ -670,11 +670,15 @@ def _smart_truncate_long_line(line: str, max_length: int = MAX_LINE_LENGTH) -> s
 
 
 def _normalize_line(line: str) -> str:
-    """Normalize a line by removing variable parts."""
-    # Strip the "{line_number}: " prefix that extract_log prepends to every
-    # extracted line. Without this, identical errors at different log
-    # positions normalize to different strings and never dedupe.
-    line = re.sub(r"^\d+:\s*", "", line)
+    """Normalize a log line by removing volatile fragments for dedup.
+
+    Strips: timestamps (`YYYY-MM-DDTHH:MM:SS[.ms][Z]`), hex addresses (`0x...`),
+    process/thread IDs (both `pid: 123` colon and `pid=123` equals forms),
+    device IDs (`physical_device_id: N`), inline line numbers (`:N:`,
+    `line N`), temp paths (`/tmp/...`), and retry/iteration counters. Input
+    is expected to be a raw log line, not an `extract_log`-formatted section
+    line — section-level prefix stripping lives in `_dedupe_error_sections`.
+    """
     # Remove timestamps
     line = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.\d]*Z?", "", line)
     # Remove memory addresses
@@ -711,13 +715,24 @@ def _normalize_error(line: str) -> str:
     return _normalize_line(line)[:150]
 
 
+# Section lines produced by extract_log are prefixed with "{line_number}: "
+# (see the `f"{j+1}: {line}"` assembly in extract_log). Strip that before
+# normalization so identical errors at different log positions dedupe.
+_SECTION_LINE_PREFIX = re.compile(r"^\d+:\s*")
+
+
+def _normalize_section_line(line: str) -> str:
+    """Like _normalize_line but also strips the extract_log section prefix."""
+    return _normalize_line(_SECTION_LINE_PREFIX.sub("", line))
+
+
 def _dedupe_error_sections(sections: list[str]) -> list[str]:
     """Collapse identical error sections (modulo timestamps/PIDs/addresses).
 
-    Uses _normalize_line on every line of a section to strip volatile parts
-    (timestamps, PIDs, hex addresses, line numbers), then hashes the joined
-    normalized text. Identical sections collapse to the first occurrence,
-    annotated with '(N identical occurrences omitted)'.
+    Normalizes each line via _normalize_section_line (which strips the
+    extract_log "{lineno}: " prefix plus the usual volatile fragments),
+    hashes the joined normalized text, and keeps only the first occurrence.
+    Duplicates are acknowledged inline: '... (N identical occurrences omitted)'.
     """
     if len(sections) < 2:
         return sections
@@ -727,7 +742,7 @@ def _dedupe_error_sections(sections: list[str]) -> list[str]:
     kept: list[int] = []         # ordered list of indices we keep
 
     for i, section in enumerate(sections):
-        normalized = "\n".join(_normalize_line(line) for line in section.splitlines())
+        normalized = "\n".join(_normalize_section_line(line) for line in section.splitlines())
         if normalized in seen:
             counts[seen[normalized]] = counts.get(seen[normalized], 0) + 1
         else:
