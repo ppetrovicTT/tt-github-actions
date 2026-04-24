@@ -684,9 +684,10 @@ def _normalize_line(line: str) -> str:
     # Remove memory addresses
     line = re.sub(r"0x[0-9a-fA-F]+", "0x...", line)
     # Remove PIDs/TIDs (both "pid: 123" and "pid=123" formats — real vLLM /
-    # tt-metal logs use the equals form: "(EngineCore_DP0 pid=197)")
-    line = re.sub(r"pid[:=]\s*\d+", "pid=...", line)
-    line = re.sub(r"tid[:=]\s*\d+", "tid=...", line)
+    # tt-metal logs use the equals form: "(EngineCore_DP0 pid=197)").
+    # Anchor with a non-word lookbehind so we don't match "rapid=200" etc.
+    line = re.sub(r"(?<!\w)pid[:=]\s*\d+", "pid=...", line)
+    line = re.sub(r"(?<!\w)tid[:=]\s*\d+", "tid=...", line)
     # Remove device IDs that vary
     line = re.sub(r"physical_device_id:\s*\d+", "physical_device_id: N", line)
     # Remove line numbers

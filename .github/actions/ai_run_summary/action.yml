@@ -34,8 +34,8 @@ inputs:
     description: >-
       Aggregate result of the matrix job. Pass
       ${{ needs.<matrix-job>.result }}. Accepted values: 'success',
-      'failure', 'cancelled', 'skipped'. When 'cancelled', no
-      INFRA_FAILURE stubs are synthesized.
+      'failure', 'cancelled', 'skipped'. When 'cancelled' or 'skipped',
+      no INFRA_FAILURE stubs are synthesized (nothing to reconcile).
     required: false
     default: ""
 

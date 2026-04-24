@@ -203,8 +203,11 @@ def main():
     summaries_dir = Path(summary_dir)
 
     # Synthesize INFRA_FAILURE stubs for expected matrix legs that produced no
-    # artifact. Skipped when run_result=cancelled|skipped (nothing to reconcile).
-    if bool(args.expected_jobs) != bool(args.run_result):
+    # artifact. --expected-jobs and --run-result must be passed together;
+    # cancelled/skipped suppression happens inside synthesize_missing_legs.
+    only_expected = args.expected_jobs and not args.run_result
+    only_run_result = args.run_result and not args.expected_jobs
+    if only_expected or only_run_result:
         print("::warning::--expected-jobs and --run-result must be passed "
               "together; synthesis is disabled this run", file=sys.stderr)
     if args.expected_jobs and args.run_result:
