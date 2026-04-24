@@ -14,6 +14,10 @@ inputs:
   job-name:
     description: "Job name for the summary header (defaults to GitHub Actions job.name)"
     required: false
+  job-status:
+    description: "GHA job.status ('success' | 'failure' | 'cancelled'). When set to 'failure' and the log-based classifier would return SUCCESS, the tool overrides to UNKNOWN. Pass as ${{ job.status }}."
+    required: false
+    default: ""
 
 outputs:
   summary-dir:
@@ -110,6 +114,7 @@ runs:
       env:
         TT_CHAT_API_KEY: ${{ inputs.api-key }}
         TT_CHAT_URL: ${{ inputs.api-url }}
+        JOB_STATUS: ${{ inputs.job-status }}
       run: |
         CONFIG_PATH="${{ steps.setup.outputs.config_path }}"
         OUTPUT_DIR="${{ steps.setup.outputs.output_dir }}"
@@ -117,8 +122,9 @@ runs:
         JOB_URL="${{ steps.job-meta.outputs.job_url }}"
 
         CMD_ARGS=(--config "$CONFIG_PATH")
-        [ -n "$JOB_URL" ]  && CMD_ARGS+=(--job-url "$JOB_URL")
-        [ -n "$JOB_NAME" ] && CMD_ARGS+=(--job-name "$JOB_NAME")
+        [ -n "$JOB_URL" ]    && CMD_ARGS+=(--job-url "$JOB_URL")
+        [ -n "$JOB_NAME" ]   && CMD_ARGS+=(--job-name "$JOB_NAME")
+        [ -n "$JOB_STATUS" ] && CMD_ARGS+=(--job-status "$JOB_STATUS")
 
         echo "::group::AI Job Summary"
         ai-job-summary "${CMD_ARGS[@]}" || {

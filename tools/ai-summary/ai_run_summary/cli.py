@@ -64,8 +64,15 @@ def main():
         description="Aggregate per-job AI summaries into a run-level report",
     )
     parser.add_argument("--config", required=True, help="Path to project config YAML")
-    parser.add_argument("--manifest", type=Path, default=None,
-                        help="Matrix manifest JSON listing expected jobs (for INFRA_FAILURE stubs)")
+    parser.add_argument("--jobs-list", type=Path, default=None,
+                        help="JSON list of GHA jobs (from listJobsForWorkflowRun). "
+                             "Authoritative source for leg presence and conclusion. "
+                             "Drops cancelled legs, stubs INFRA_FAILURE for failed legs "
+                             "with no summary, overrides SUCCESS to UNKNOWN when GHA "
+                             "conclusion is failure.")
+    parser.add_argument("--jobs-filter", type=str, default="",
+                        help="Substring filter applied to GHA job names to identify "
+                             "matrix legs (e.g. 'vllm-tests / ').")
 
     args = parser.parse_args()
 
@@ -90,12 +97,17 @@ def main():
 
     summaries_dir = Path(summary_dir)
 
-    # Apply matrix manifest: stub INFRA_FAILURE for any expected job with no summary
-    if args.manifest and args.manifest.exists():
-        from .manifest import apply_manifest
-        n = apply_manifest(summaries_dir, args.manifest)
-        if n:
-            print(f"Created {n} INFRA_FAILURE stub(s) for jobs with no summary", file=sys.stderr)
+    # Reconcile with the GHA jobs list: authoritative per-leg status.
+    if args.jobs_list and args.jobs_list.exists():
+        from .jobs_list import apply_jobs_list
+        stats = apply_jobs_list(summaries_dir, args.jobs_list, jobs_filter=args.jobs_filter)
+        if stats["cancelled_dropped"]:
+            print(f"Dropped {stats['cancelled_dropped']} cancelled leg(s) from report", file=sys.stderr)
+        if stats["infra_stubbed"]:
+            print(f"Stubbed {stats['infra_stubbed']} INFRA_FAILURE leg(s) with no summary", file=sys.stderr)
+        if stats["success_overridden"]:
+            print(f"Overrode SUCCESS -> UNKNOWN for {stats['success_overridden']} leg(s) (GHA says failure)",
+                  file=sys.stderr)
 
     # Set model from config
     model = config.get("model", "")

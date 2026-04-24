@@ -21,8 +21,8 @@ inputs:
     description: "Slack channel ID (skip Slack if empty)"
     required: false
     default: ""
-  matrix-manifest:
-    description: "Artifact name containing matrix_manifest.json (list of expected job names). If set, jobs with no summary are stubbed as INFRA_FAILURE."
+  jobs-filter:
+    description: "Substring that must appear in a GHA job name to be considered a matrix leg (e.g. 'vllm-tests / '). When set, the action queries the run's jobs via the GH API and uses that authoritative list to stub INFRA_FAILURE for failed legs with no summary, drop cancelled legs, and override SUCCESS to UNKNOWN when a leg's GHA conclusion is 'failure'."
     required: false
     default: ""
 
@@ -87,13 +87,33 @@ runs:
         path: ${{ steps.config.outputs.summary_dir }}
         merge-multiple: true
 
-    - name: Download matrix manifest
-      if: inputs.matrix-manifest != ''
-      uses: actions/download-artifact@v4
-      continue-on-error: true
+    - name: Fetch GHA jobs list
+      id: jobs
+      if: inputs.jobs-filter != ''
+      uses: actions/github-script@v7
       with:
-        name: ${{ inputs.matrix-manifest }}
-        path: /tmp/ai-summary/manifest
+        # Returns a JSON array of {name, conclusion, status} for every job in
+        # the current run. Used by ai-run-summary to reconcile cancelled /
+        # failed / infra-missing legs without needing a matrix manifest.
+        script: |
+          const jobs = await github.paginate(
+            github.rest.actions.listJobsForWorkflowRun,
+            { owner: context.repo.owner, repo: context.repo.repo, run_id: context.runId }
+          );
+          return JSON.stringify(
+            jobs.map(j => ({ name: j.name, conclusion: j.conclusion, status: j.status }))
+          );
+        result-encoding: string
+
+    - name: Write jobs list to disk
+      if: inputs.jobs-filter != ''
+      shell: bash
+      env:
+        JOBS_JSON: ${{ steps.jobs.outputs.result }}
+      run: |
+        mkdir -p /tmp/ai-summary
+        printf '%s' "$JOBS_JSON" > /tmp/ai-summary/jobs.json
+        echo "Wrote $(wc -c </tmp/ai-summary/jobs.json) bytes of GHA jobs JSON"
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
@@ -123,7 +143,10 @@ runs:
         trap 'rm -f "$STDERR_FILE"' EXIT
 
         CMD_ARGS=(--config "$CONFIG_PATH")
-        [ -f "/tmp/ai-summary/manifest/matrix_manifest.json" ] && CMD_ARGS+=(--manifest "/tmp/ai-summary/manifest/matrix_manifest.json")
+        if [ -f "/tmp/ai-summary/jobs.json" ]; then
+          CMD_ARGS+=(--jobs-list "/tmp/ai-summary/jobs.json")
+          [ -n "${{ inputs.jobs-filter }}" ] && CMD_ARGS+=(--jobs-filter "${{ inputs.jobs-filter }}")
+        fi
 
         echo "::group::AI Run Summary"
         ai-run-summary "${CMD_ARGS[@]}" 2> >(tee "$STDERR_FILE" >&2) || {
