@@ -23,8 +23,8 @@ inputs:
     default: ""
   expected-jobs:
     description: >-
-      JSON array of expected matrix legs. Pass
-      ${{ needs.<matrix-job>.outputs.matrix }} from a generate-matrix job.
+      JSON array of expected matrix legs. Pass the output of a
+      generate-matrix job (`needs.<matrix-job>.outputs.matrix`).
       When set together with run-result, the action synthesizes
       INFRA_FAILURE rows for expected legs whose ai-job-summary artifact
       is missing (runner/container setup failure, runner died, etc.).
@@ -32,10 +32,10 @@ inputs:
     default: ""
   run-result:
     description: >-
-      Aggregate result of the matrix job. Pass
-      ${{ needs.<matrix-job>.result }}. Accepted values: 'success',
-      'failure', 'cancelled', 'skipped'. When 'cancelled' or 'skipped',
-      no INFRA_FAILURE stubs are synthesized (nothing to reconcile).
+      Aggregate result of the matrix job (`needs.<matrix-job>.result`).
+      Accepted values: 'success', 'failure', 'cancelled', 'skipped'.
+      When 'cancelled' or 'skipped', no INFRA_FAILURE stubs are
+      synthesized (nothing to reconcile).
     required: false
     default: ""
 
