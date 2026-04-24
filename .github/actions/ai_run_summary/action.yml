@@ -142,6 +142,19 @@ runs:
         fi
         echo "report_file=$REPORT_FILE" >> "$GITHUB_OUTPUT"
 
+    - name: Show report
+      if: always() && !cancelled() && steps.summarize.outputs.report_file != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        REPORT_FILE: ${{ steps.summarize.outputs.report_file }}
+      run: |
+        if [ -f "$REPORT_FILE" ]; then
+          echo "::group::AI Run Summary"
+          cat "$REPORT_FILE"
+          echo "::endgroup::"
+        fi
+
     - name: Upload run summary
       if: always() && !cancelled() && steps.summarize.outputs.report_file != ''
       continue-on-error: true
