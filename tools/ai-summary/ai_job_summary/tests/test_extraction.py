@@ -223,9 +223,9 @@ class TestModelLoadFailure:
     def test_error_sections_not_empty(self, extracted):
         assert len(extracted.error_sections) >= 1
 
-    def test_has_crash_is_false(self, extracted):
-        """Python KeyError during load is not a TT_FATAL crash."""
-        assert extracted.has_crash is False
+    def test_has_crash_is_true(self, extracted):
+        """Python KeyError at line-start is a crash — process died on uncaught exception."""
+        assert extracted.has_crash is True
 
     def test_error_sections_signal_some_failure(self, extracted):
         """At minimum, there should be error content extracted."""
@@ -456,3 +456,55 @@ class TestMergeLogFilesMultiDir:
         text = "".join(lines)
         # Single dir — no dir name prefix in source label
         assert "logs/" not in text
+
+
+# ── has_crash — Python exception detection ────────────────────────────────────
+
+
+class TestHasCrashPythonExceptions:
+    """has_crash should fire on anchored Python exception lines."""
+
+    def _run(self, content: str, tmp_path) -> bool:
+        log = tmp_path / "server.log"
+        log.write_text(content)
+        return extract_log(tmp_path).has_crash
+
+    def test_attribute_error_at_line_start(self, tmp_path):
+        assert self._run(
+            "Traceback (most recent call last):\n"
+            "  File \"foo.py\", line 1, in <module>\n"
+            "AttributeError: 'NoneType' object has no attribute 'foo'\n",
+            tmp_path,
+        )
+
+    def test_key_error_at_line_start(self, tmp_path):
+        assert self._run("KeyError: 'missing_key'\n", tmp_path)
+
+    def test_runtime_error_at_line_start(self, tmp_path):
+        assert self._run("RuntimeError: something broke\n", tmp_path)
+
+    def test_module_not_found_at_line_start(self, tmp_path):
+        assert self._run(
+            "ModuleNotFoundError: No module named 'vllm.multimodal.profiling'\n",
+            tmp_path,
+        )
+
+    def test_import_error_at_line_start(self, tmp_path):
+        assert self._run(
+            "ImportError: cannot import name 'X' from 'y'\n",
+            tmp_path,
+        )
+
+    def test_does_not_match_lowercase_log_error(self, tmp_path):
+        # "error: something" at line start must NOT trigger (it's a log level).
+        assert not self._run("error: benchmark warning: 0 requests failed\n", tmp_path)
+
+    def test_does_not_match_mid_line_exception_mention(self, tmp_path):
+        # AttributeError inside prose / JSON blob should NOT trigger.
+        assert not self._run(
+            '{"msg": "caught AttributeError while retrying"}\n',
+            tmp_path,
+        )
+
+    def test_does_not_match_upper_error_log_level(self, tmp_path):
+        assert not self._run("ERROR: nightly job finished\n", tmp_path)

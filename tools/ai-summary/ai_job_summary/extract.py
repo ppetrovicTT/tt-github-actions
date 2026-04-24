@@ -378,9 +378,18 @@ def extract_log(
     # Scan full log for metadata
     full_text = "".join(lines)
 
-    # Detect infrastructure crashes - these are ALWAYS the root cause, not test failures
-    # TT_THROW/TT_FATAL means tt-metal crashed, which then cascades to vLLM timeout and test failures
-    result.has_crash = bool(re.search(r"TT_FATAL|TT_THROW|\bpanic\b|Segmentation fault|SIGSEGV", full_text, re.IGNORECASE))
+    # Detect infrastructure crashes - these are ALWAYS the root cause, not test failures.
+    # TT_THROW/TT_FATAL means tt-metal crashed, which cascades to vLLM timeout and test failures.
+    # Python exceptions anchored to line start are also crashes (process died on uncaught exception).
+    tt_crash = re.search(
+        r"TT_FATAL|TT_THROW|\bpanic\b|Segmentation fault|SIGSEGV",
+        full_text, re.IGNORECASE,
+    )
+    py_crash = re.search(
+        r"^(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
+        full_text, re.MULTILINE,
+    )
+    result.has_crash = bool(tt_crash or py_crash)
 
     # Detect timeout - be specific to avoid false positives from config values
     # Only match actual timeout EVENTS (past tense "timed out"), not config values ("timeout: 60s")
