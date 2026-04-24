@@ -108,9 +108,6 @@ def main():
                         help="Validate config fields and exit (used by action.yml before running)")
     parser.add_argument("--job-name", type=str, help="Job name for summary header")
     parser.add_argument("--job-url", type=str, help="Job URL for summary header link")
-    parser.add_argument("--job-status", type=str, default="",
-                        help="GHA job.status (success|failure|cancelled). "
-                             "When 'failure' and no log signals found, override SUCCESS to UNKNOWN.")
 
     args = parser.parse_args()
 
@@ -187,27 +184,7 @@ def main():
         print(f"Status: {job_status.status_text}", file=sys.stderr)
 
         # Success + no missing dirs → done
-        # UNLESS the GHA job itself failed: in that case the log had no error
-        # signals we recognize, but the job still failed at the GHA level.
-        # Report as UNKNOWN so the run-level aggregator can flag it.
-        gha_status = (args.job_status or "").lower()
         if job_status.is_success and not is_infra_failure:
-            if gha_status == "failure":
-                print("::warning::GHA job.status=failure but no error patterns found in logs — reporting UNKNOWN",
-                      file=sys.stderr)
-                unknown_status = JobStatus(False, "GRAY", "UNKNOWN")
-                summary = FailureSummary()
-                summary.category = "unknown:no_log_signals"
-                summary.root_cause = ("Job failed at the GitHub Actions level but the tool found no "
-                                      "recognizable error patterns in the logs. Likely a server-startup "
-                                      "crash, pre-script failure, or an error pattern not yet covered "
-                                      "by analysis.yaml.")
-                context = CIContext()
-                md = format_summary_markdown(summary, context, unknown_status, extracted_log=extracted)
-                _write_outputs(output_dir, job_id, md, _build_json(
-                    summary, unknown_status, extracted, job_name=job_name, job_url=job_url,
-                ))
-                return
             summary = FailureSummary()
             context = CIContext()
             md = format_summary_markdown(summary, context, job_status, extracted_log=extracted)
