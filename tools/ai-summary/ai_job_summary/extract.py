@@ -665,13 +665,18 @@ def _smart_truncate_long_line(line: str, max_length: int = MAX_LINE_LENGTH) -> s
 
 def _normalize_line(line: str) -> str:
     """Normalize a line by removing variable parts."""
+    # Strip the "{line_number}: " prefix that extract_log prepends to every
+    # extracted line. Without this, identical errors at different log
+    # positions normalize to different strings and never dedupe.
+    line = re.sub(r"^\d+:\s*", "", line)
     # Remove timestamps
     line = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.\d]*Z?", "", line)
     # Remove memory addresses
     line = re.sub(r"0x[0-9a-fA-F]+", "0x...", line)
-    # Remove PIDs/TIDs
-    line = re.sub(r"pid:\s*\d+", "pid: ...", line)
-    line = re.sub(r"tid:\s*\d+", "tid: ...", line)
+    # Remove PIDs/TIDs (both "pid: 123" and "pid=123" formats — real vLLM /
+    # tt-metal logs use the equals form: "(EngineCore_DP0 pid=197)")
+    line = re.sub(r"pid[:=]\s*\d+", "pid=...", line)
+    line = re.sub(r"tid[:=]\s*\d+", "tid=...", line)
     # Remove device IDs that vary
     line = re.sub(r"physical_device_id:\s*\d+", "physical_device_id: N", line)
     # Remove line numbers

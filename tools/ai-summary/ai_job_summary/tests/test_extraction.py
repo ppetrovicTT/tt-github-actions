@@ -550,6 +550,23 @@ class TestErrorSectionDedup:
         assert "2 identical occurrences omitted" in result[0]
         assert result[1] == "KeyError: different"
 
+    def test_dedup_multiline_real_format(self):
+        # Real-format sections: line-number prefix from extract_log (`{j+1}: `)
+        # and equals-form PIDs like "(EngineCore_DP0 pid=197)" that appear in
+        # actual vLLM/tt-metal logs.
+        from ai_job_summary.extract import _dedupe_error_sections
+        sections = [
+            "100: 2026-04-24T10:00:00 (EngineCore_DP0 pid=197) RuntimeError: TT_FATAL\n"
+            "101:   at tt_metal/dispatch.cpp:227\n"
+            "102: 2026-04-24T10:00:00 shutting down",
+            "200: 2026-04-24T10:05:00 (EngineCore_DP0 pid=324) RuntimeError: TT_FATAL\n"
+            "201:   at tt_metal/dispatch.cpp:227\n"
+            "202: 2026-04-24T10:05:00 shutting down",
+        ]
+        result = _dedupe_error_sections(sections)
+        assert len(result) == 1
+        assert "1 identical occurrences omitted" in result[0]
+
     def test_distinct_sections_are_kept(self, tmp_path):
         # extract_log merges sections within ±context_lines (5 default) of each
         # other. Use filler lines so the two errors land in separate sections.
