@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from ai_run_summary.cli import main, _should_call_llm, _resolve_run_metadata
+from ai_run_summary.cli import main, _should_call_llm, _resolve_run_metadata, synthesize_missing_legs
 
 
 class TestShouldCallLlm:
@@ -173,3 +173,73 @@ class TestMain:
         report = tmp_path / "ai_run_summary_77777.md"
         assert report.exists()
         assert "77777" in report.read_text()
+
+
+class TestSynthesizeMissingLegs:
+    """Expected-jobs reconciliation: stubs INFRA_FAILURE for missing artifacts."""
+
+    @staticmethod
+    def _write_summary(summary_dir, name, status="SUCCESS"):
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        path = summary_dir / f"ai_job_summary_{abs(hash(name))}.json"
+        path.write_text(json.dumps({"_job": {"name": name, "status": status}}))
+
+    def test_stubs_infra_for_missing_when_run_failed(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        self._write_summary(summary_dir, "[N150] Alpha")
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="failure")
+
+        assert stats == {"infra_stubbed": 1}
+        produced = {
+            json.loads(f.read_text())["_job"]["name"]: json.loads(f.read_text())["_job"]["status"]
+            for f in summary_dir.glob("*.json")
+        }
+        assert produced == {"[N150] Alpha": "SUCCESS", "[N150] Beta": "INFRA_FAILURE"}
+
+    def test_stubs_infra_for_missing_when_run_succeeded(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        self._write_summary(summary_dir, "[N150] Alpha")
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="success")
+
+        assert stats == {"infra_stubbed": 1}
+
+    def test_cancelled_run_does_not_synthesize(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        self._write_summary(summary_dir, "[N150] Alpha")
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="cancelled")
+
+        assert stats == {"infra_stubbed": 0}
+        remaining = {json.loads(f.read_text())["_job"]["name"] for f in summary_dir.glob("*.json")}
+        assert remaining == {"[N150] Alpha"}
+
+    def test_accepts_json_string(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        expected_str = json.dumps([{"name": "[N150] Alpha"}])
+
+        stats = synthesize_missing_legs(summary_dir, expected_str, run_result="failure")
+
+        assert stats == {"infra_stubbed": 1}
+        data = json.loads(next(summary_dir.glob("*.json")).read_text())
+        assert data["_job"]["name"] == "[N150] Alpha"
+        assert data["_job"]["status"] == "INFRA_FAILURE"
+
+    def test_all_arrived_no_synthesis(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        self._write_summary(summary_dir, "[N150] Alpha")
+        self._write_summary(summary_dir, "[N150] Beta")
+        expected = [{"name": "[N150] Alpha"}, {"name": "[N150] Beta"}]
+
+        stats = synthesize_missing_legs(summary_dir, expected, run_result="success")
+
+        assert stats == {"infra_stubbed": 0}
+
+    def test_empty_expected_list(self, tmp_path):
+        summary_dir = tmp_path / "summaries"
+        stats = synthesize_missing_legs(summary_dir, [], run_result="failure")
+        assert stats == {"infra_stubbed": 0}

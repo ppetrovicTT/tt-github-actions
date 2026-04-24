@@ -31,6 +31,80 @@ def _should_call_llm(config: dict) -> bool:
     return bool(model) and model.lower() != "none"
 
 
+def _received_names(summary_dir: Path) -> set[str]:
+    """Return names of jobs that produced an ai-job-summary artifact."""
+    import json as _json
+    names: set[str] = set()
+    for f in summary_dir.glob("*.json"):
+        try:
+            data = _json.loads(f.read_text())
+            name = data.get("_job", {}).get("name", "")
+            if name:
+                names.add(name)
+        except (ValueError, OSError):
+            pass
+    return names
+
+
+def _stub_infra(summary_dir: Path, name: str) -> None:
+    """Write an INFRA_FAILURE stub for an expected leg that never reported."""
+    import json as _json
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    path = summary_dir / f"ai_job_summary_{abs(hash(name))}.json"
+    path.write_text(_json.dumps({
+        "_job": {"name": name, "status": "INFRA_FAILURE"},
+        "category": "infra:no_artifact",
+        "root_cause": (
+            "Job produced no ai-job-summary artifact. Likely cause: "
+            "container/runner setup failure, runner never picked up the job, "
+            "or the runner was killed before ai-job-summary could run. "
+            "Check the GitHub Actions logs for the individual job."
+        ),
+    }, indent=2))
+
+
+def synthesize_missing_legs(
+    summary_dir: Path,
+    expected_jobs: "str | list[dict] | Path",
+    run_result: str,
+) -> dict[str, int]:
+    """Synthesize INFRA_FAILURE stubs for expected jobs that produced no artifact.
+
+    Args:
+        summary_dir:   Directory containing per-leg ai_job_summary_*.json files.
+        expected_jobs: The generate-matrix output. Accepted forms:
+                         - a JSON string (from ${{ needs.x.outputs.matrix }}),
+                         - an already-parsed list of dicts,
+                         - a pathlib.Path to a JSON file (for local use / tests).
+                       Each entry must have a "name" matching _job.name in artifacts.
+        run_result:    The matrix job's aggregate needs.<>.result:
+                       'success' | 'failure' | 'cancelled' | 'skipped'.
+                       Synthesis is skipped when cancelled.
+
+    Returns: {"infra_stubbed": n}
+    """
+    import json as _json
+    if run_result.lower() == "cancelled":
+        return {"infra_stubbed": 0}
+
+    if isinstance(expected_jobs, Path):
+        jobs = _json.loads(expected_jobs.read_text())
+    elif isinstance(expected_jobs, str):
+        jobs = _json.loads(expected_jobs) if expected_jobs.strip() else []
+    else:
+        jobs = expected_jobs
+
+    received = _received_names(summary_dir)
+    stubbed = 0
+    for job in jobs:
+        name = job.get("name", "")
+        if not name or name in received:
+            continue
+        _stub_infra(summary_dir, name)
+        stubbed += 1
+    return {"infra_stubbed": stubbed}
+
+
 def _resolve_run_metadata() -> dict:
     """Gather run metadata from environment variables.
 
@@ -64,15 +138,14 @@ def main():
         description="Aggregate per-job AI summaries into a run-level report",
     )
     parser.add_argument("--config", required=True, help="Path to project config YAML")
-    parser.add_argument("--jobs-list", type=Path, default=None,
-                        help="JSON list of GHA jobs (from listJobsForWorkflowRun). "
-                             "Authoritative source for leg presence and conclusion. "
-                             "Drops cancelled legs, stubs INFRA_FAILURE for failed legs "
-                             "with no summary, overrides SUCCESS to UNKNOWN when GHA "
-                             "conclusion is failure.")
     parser.add_argument("--jobs-filter", type=str, default="",
                         help="Substring filter applied to GHA job names to identify "
-                             "matrix legs (e.g. 'vllm-tests / ').")
+                             "matrix legs (e.g. 'vllm-tests / '). When set, the tool "
+                             "reads the GHA jobs list from the GHA_JOBS environment "
+                             "variable and uses it as the authoritative source for "
+                             "per-leg status (drops cancelled legs, stubs INFRA_FAILURE "
+                             "for failed legs with no summary, overrides SUCCESS to "
+                             "INFRA_FAILURE when GHA conclusion is failure).")
 
     args = parser.parse_args()
 
@@ -97,16 +170,18 @@ def main():
 
     summaries_dir = Path(summary_dir)
 
-    # Reconcile with the GHA jobs list: authoritative per-leg status.
-    if args.jobs_list and args.jobs_list.exists():
+    # Reconcile with the GHA jobs list (from GHA_JOBS env var): authoritative
+    # per-leg status. Only active when --jobs-filter is set.
+    gha_jobs = os.environ.get("GHA_JOBS", "").strip()
+    if args.jobs_filter and gha_jobs:
         from .jobs_list import apply_jobs_list
-        stats = apply_jobs_list(summaries_dir, args.jobs_list, jobs_filter=args.jobs_filter)
+        stats = apply_jobs_list(summaries_dir, gha_jobs, jobs_filter=args.jobs_filter)
         if stats["cancelled_dropped"]:
             print(f"Dropped {stats['cancelled_dropped']} cancelled leg(s) from report", file=sys.stderr)
         if stats["infra_stubbed"]:
             print(f"Stubbed {stats['infra_stubbed']} INFRA_FAILURE leg(s) with no summary", file=sys.stderr)
         if stats["success_overridden"]:
-            print(f"Overrode SUCCESS -> UNKNOWN for {stats['success_overridden']} leg(s) (GHA says failure)",
+            print(f"Overrode SUCCESS -> INFRA_FAILURE for {stats['success_overridden']} leg(s) (GHA says failure)",
                   file=sys.stderr)
 
     # Set model from config
