@@ -387,8 +387,9 @@ def extract_log(
     )
     # The (?<![\w.]) lookbehind allows real log prefixes ("(APIServer pid=N) ",
     # "[core.py:1104] ") while excluding module-qualified or concatenated
-    # names (vllm.RuntimeError:, MyAttributeError:). ValueError/TypeError/
-    # IndexError are intentionally absent — too noisy in pytest output.
+    # names (vllm.RuntimeError:, MyAttributeError:). AssertionError /
+    # ValueError / TypeError / IndexError are intentionally absent — they
+    # appear routinely in pytest E-lines from healthy test failures.
     py_crash = re.search(
         r"(?<![\w.])(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
         full_text,
@@ -751,7 +752,9 @@ def _dedupe_error_sections(sections: list[str]) -> list[str]:
     result: list[str] = []
     for i in kept:
         if i in counts:
-            result.append(f"{sections[i]}\n... ({counts[i]} identical occurrences omitted)")
+            n = counts[i]
+            noun = "occurrence" if n == 1 else "occurrences"
+            result.append(f"{sections[i]}\n... ({n} identical {noun} omitted)")
         else:
             result.append(sections[i])
     return result

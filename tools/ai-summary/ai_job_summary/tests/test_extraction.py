@@ -135,8 +135,33 @@ class TestTtMetalFabricTimeout:
             or "ethernet" in errors
         ), "Expected crash, timeout, or Ethernet error signal"
 
+    def test_has_crash_is_true(self, extracted):
+        """The vLLM-prefixed RuntimeError tail in this fixture must trigger
+        has_crash. Pins the behavior so a regex regression is loud."""
+        assert extracted.has_crash is True
+
     def test_error_sections_not_empty(self, extracted):
         assert len(extracted.error_sections) >= 1
+
+
+# ── infra:docker — image pull failure (prose-only mentions of "RuntimeError") ─
+
+
+class TestInfraDockerPullFailure:
+    """
+    Log: infra_docker_pull_failure.txt
+    Root cause: docker pull failed; log mentions "RuntimeError" only in prose,
+    not as an actual exception tail.
+    """
+
+    @pytest.fixture(scope="class")
+    def extracted(self):
+        return extract_log(FIXTURE_DIR / "infra_docker_pull_failure.txt")
+
+    def test_has_crash_is_false(self, extracted):
+        """Prose mentions of exception type names must NOT trigger has_crash.
+        Pins the negative-lookbehind behavior of the py_crash regex."""
+        assert extracted.has_crash is False
 
 
 # ── infra:network — DNS resolution failure ────────────────────────────────────
@@ -610,7 +635,7 @@ class TestErrorSectionDedup:
         ]
         result = _dedupe_error_sections(sections)
         assert len(result) == 1
-        assert "1 identical occurrences omitted" in result[0]
+        assert "1 identical occurrence omitted" in result[0]
 
     def test_distinct_sections_are_kept(self, tmp_path):
         # extract_log merges sections within ±context_lines (5 default) of each

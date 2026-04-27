@@ -174,30 +174,34 @@ class TestMain:
         assert report.exists()
         assert "77777" in report.read_text()
 
-    def test_expected_jobs_without_run_result_warns(self, tmp_path, capsys):
+    def test_expected_jobs_without_run_result_hard_fails(self, tmp_path, capsys):
         self._write_summaries(tmp_path)
         config_path = self._write_config(
             tmp_path, summary_dir=str(tmp_path), output_dir=str(tmp_path), model="none"
         )
         argv = ["ai-run-summary", "--config", str(config_path),
                 "--expected-jobs", '[{"name":"X"}]']
-        with patch("sys.argv", argv):
-            main()
+        with pytest.raises(SystemExit) as exc:
+            with patch("sys.argv", argv):
+                main()
+        assert exc.value.code == 1
         stderr = capsys.readouterr().err
-        assert "::warning::" in stderr
+        assert "::error::" in stderr
         assert "must be passed together" in stderr
 
-    def test_run_result_without_expected_jobs_warns(self, tmp_path, capsys):
+    def test_run_result_without_expected_jobs_hard_fails(self, tmp_path, capsys):
         self._write_summaries(tmp_path)
         config_path = self._write_config(
             tmp_path, summary_dir=str(tmp_path), output_dir=str(tmp_path), model="none"
         )
         argv = ["ai-run-summary", "--config", str(config_path),
                 "--run-result", "failure"]
-        with patch("sys.argv", argv):
-            main()
+        with pytest.raises(SystemExit) as exc:
+            with patch("sys.argv", argv):
+                main()
+        assert exc.value.code == 1
         stderr = capsys.readouterr().err
-        assert "::warning::" in stderr
+        assert "::error::" in stderr
         assert "must be passed together" in stderr
 
 
@@ -319,3 +323,27 @@ class TestSynthesizeMissingLegs:
         files = list(tmp_path.glob("*.json"))
         assert len(files) == 2
         assert len({f.name for f in files}) == 2
+
+    def test_json_dict_warns_and_returns_zero(self, tmp_path, capsys):
+        # JSON object instead of array — log a warning, don't crash.
+        stats = synthesize_missing_legs(tmp_path, '{"name":"Alpha"}', run_result="failure")
+        assert stats == {"infra_stubbed": 0}
+        assert "must be a JSON array" in capsys.readouterr().err
+
+    def test_json_scalar_warns_and_returns_zero(self, tmp_path, capsys):
+        stats = synthesize_missing_legs(tmp_path, "42", run_result="failure")
+        assert stats == {"infra_stubbed": 0}
+        assert "must be a JSON array" in capsys.readouterr().err
+
+    def test_list_with_non_dict_entries_skipped(self, tmp_path):
+        # Strings / nulls in the list are skipped silently; dicts still process.
+        expected = [{"name": "Alpha"}, "not-a-dict", None, {"name": "Beta"}]
+        stats = synthesize_missing_legs(tmp_path, expected, run_result="failure")
+        assert stats == {"infra_stubbed": 2}
+
+    def test_empty_run_result_warns_and_returns_zero(self, tmp_path, capsys):
+        # synthesize_missing_legs called directly with run_result="" must not
+        # silently stub everything — warn and bail.
+        stats = synthesize_missing_legs(tmp_path, [{"name": "Alpha"}], run_result="")
+        assert stats == {"infra_stubbed": 0}
+        assert "--run-result is empty" in capsys.readouterr().err

@@ -101,6 +101,11 @@ def synthesize_missing_legs(
     warning if ``expected_jobs`` is a malformed JSON string rather than
     crashing the aggregation step.
     """
+    if not run_result:
+        print("::warning::--run-result is empty; skipping infra-failure synthesis",
+              file=sys.stderr)
+        return {"infra_stubbed": 0}
+
     if run_result.lower() in ("cancelled", "skipped"):
         return {"infra_stubbed": 0}
 
@@ -117,12 +122,20 @@ def synthesize_missing_legs(
     else:
         jobs = expected_jobs
 
+    if not isinstance(jobs, list):
+        print(f"::warning::--expected-jobs must be a JSON array; got "
+              f"{type(jobs).__name__}; skipping infra-failure synthesis",
+              file=sys.stderr)
+        return {"infra_stubbed": 0}
+
     received = _received_names(summary_dir)
     # Dedup names within expected_jobs so a matrix with accidental duplicates
     # doesn't inflate the stub count (and doesn't write the same stub twice).
     unique_missing: list[str] = []
     seen: set[str] = set()
     for job in jobs:
+        if not isinstance(job, dict):
+            continue
         name = job.get("name", "")
         if not name or name in received or name in seen:
             continue
@@ -207,12 +220,15 @@ def main():
 
     # Synthesize INFRA_FAILURE stubs for expected matrix legs that produced no
     # artifact. --expected-jobs and --run-result must be passed together;
-    # cancelled/skipped suppression happens inside synthesize_missing_legs.
+    # passing only one is a caller misconfiguration that silently disables
+    # the feature, so we hard-fail. cancelled/skipped suppression happens
+    # inside synthesize_missing_legs.
     only_expected = args.expected_jobs and not args.run_result
     only_run_result = args.run_result and not args.expected_jobs
     if only_expected or only_run_result:
-        print("::warning::--expected-jobs and --run-result must be passed "
-              "together; synthesis is disabled this run", file=sys.stderr)
+        print("::error::--expected-jobs and --run-result must be passed together",
+              file=sys.stderr)
+        sys.exit(1)
     if args.expected_jobs and args.run_result:
         stats = synthesize_missing_legs(
             summaries_dir, args.expected_jobs, run_result=args.run_result,

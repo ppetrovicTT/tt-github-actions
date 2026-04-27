@@ -51,10 +51,13 @@ runs:
       id: config
       shell: bash
       run: |
+        # Relative config-paths resolve against pwd (see ai_job_summary
+        # action.yml for the full rationale). ai_run_summary runs on
+        # ubuntu-latest, so pwd is the checked-out repo root.
         CONFIG_PATH="${{ inputs.config-path }}"
-        [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$GITHUB_WORKSPACE/$CONFIG_PATH"
+        [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$(pwd)/$CONFIG_PATH"
         if [ ! -f "$CONFIG_PATH" ]; then
-          echo "::error::Config file not found: $CONFIG_PATH"
+          echo "::error::Config file not found: $CONFIG_PATH (pwd=$(pwd))"
           exit 1
         fi
         echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
@@ -217,5 +220,27 @@ runs:
         rm -f "${{ steps.render.outputs.png_file }}"
         [ -n "$REPORT_FILE" ] && rm -f "${REPORT_FILE%.md}.html"
         rm -rf /tmp/ai-summary
-        rm -rf "${{ steps.config.outputs.summary_dir }}"
+
+        # Safety guard: only clean summary_dir if it's under $GITHUB_WORKSPACE
+        # and contains exclusively the artefact files we wrote. Refuses to
+        # recurse anywhere else, so a config typo (e.g. summary_dir: ".")
+        # can't nuke the workspace.
+        SUMMARY_DIR="${{ steps.config.outputs.summary_dir }}"
+        if [ -n "$SUMMARY_DIR" ] && [ -d "$SUMMARY_DIR" ]; then
+          REAL_DIR=$(realpath "$SUMMARY_DIR")
+          REAL_WS=$(realpath "$GITHUB_WORKSPACE")
+          if [[ "$REAL_DIR" == "$REAL_WS"/* ]]; then
+            STRAY=$(find "$REAL_DIR" -mindepth 1 \
+              ! -name "ai_job_summary_*.json" \
+              ! -name "ai_job_summary_*.md" \
+              ! -type d 2>/dev/null | head -1)
+            if [ -z "$STRAY" ]; then
+              rm -rf "$REAL_DIR"
+            else
+              echo "::warning::summary_dir contains unexpected file(s); leaving for inspection"
+            fi
+          else
+            echo "::warning::summary_dir resolves outside workspace ($REAL_DIR); refusing to delete"
+          fi
+        fi
         # output_dir is kept so callers can add a Show report step after this action.

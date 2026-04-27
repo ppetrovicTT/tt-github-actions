@@ -114,7 +114,8 @@ Each stage is a **GitHub composite action** — drop into any workflow.
       ▼
   ┌─────────────────────────────────────────────────┐
   │ 3. LLM analysis                                 │
-  │    Claude Sonnet 4.5 reads the extracted logs   │
+  │    An LLM (default: Claude Sonnet, configurable │
+  │    in analysis.yaml) reads the extracted logs   │
   │    and returns:                                 │
   │      - root cause                               │
   │      - which layer broke                        │
@@ -213,9 +214,10 @@ ai-run-summary:
   if: always()
   runs-on: ubuntu-latest
   steps:
+    - uses: actions/checkout@v4
     - uses: tenstorrent/tt-github-actions/.github/actions/ai_run_summary@main
       with:
-        config-path: .github/ai-summary/<workflow>.yaml
+        config-path: .github/workflows/<workflow>-ai-summary-config.yaml
         expected-jobs: ${{ needs.generate-matrix.outputs.matrix }}
         run-result: ${{ needs.matrix-job.result }}
         slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}

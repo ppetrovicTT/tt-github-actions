@@ -23,21 +23,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Clean stale build artifacts from action cache
-      if: always()
-      shell: bash
-      run: |
-        # Running as root inside the container lets us remove root-owned files
-        # that previous buggy runs may have written to the host-mounted action cache.
-        TOOL_CACHE="$(realpath "${GITHUB_ACTION_PATH}/../../../tools/ai-summary")"
-        echo "Action cache tool path: $TOOL_CACHE"
-        if [[ "$TOOL_CACHE" != *"ppetrovicTT"* && "$TOOL_CACHE" != *"tenstorrent"* ]]; then
-          echo "::warning::Unexpected path (no ppetrovicTT or tenstorrent): $TOOL_CACHE — skipping cleanup"
-        else
-          find "$TOOL_CACHE" \( -name "*.egg-info" -o -name "*.dist-info" -o -name "__pycache__" -o -name ".venv" \) \
-            -maxdepth 4 -exec rm -rf {} + 2>/dev/null || true
-        fi
-
     - name: Detect job metadata
       id: job-meta
       shell: bash
@@ -63,10 +48,16 @@ runs:
       id: setup
       shell: bash
       run: |
+        # Relative config-paths resolve against the calling step's working
+        # directory (pwd), which lets callers pass a repo-relative path like
+        # ".github/workflows/foo-config.yaml" and have it work both on bare
+        # ubuntu-latest jobs (pwd = $GITHUB_WORKSPACE) and inside Docker
+        # container jobs that mount the checkout to a custom path (pwd =
+        # the mount, e.g. /work).
         CONFIG_PATH="${{ inputs.config-path }}"
-        [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$GITHUB_WORKSPACE/$CONFIG_PATH"
+        [[ "$CONFIG_PATH" != /* ]] && CONFIG_PATH="$(pwd)/$CONFIG_PATH"
         if [ ! -f "$CONFIG_PATH" ]; then
-          echo "::error::Config file not found: $CONFIG_PATH"
+          echo "::error::Config file not found: $CONFIG_PATH (pwd=$(pwd))"
           exit 1
         fi
         echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
@@ -93,10 +84,11 @@ runs:
           exit 1
         fi
 
-        # uv is pre-installed in the container image (dockerfile/Dockerfile).
-        # Install into the container's active venv (/opt/venv, set via VIRTUAL_ENV).
-        # --no-cache prevents any writes outside the venv; the build backend uses
-        # the OS temp dir. Nothing is written back to TOOL_DIR (the action cache).
+        # Runtime requirement: this action must run inside a Docker container
+        # with an active venv. uv resolves the install target from $VIRTUAL_ENV
+        # set by the container image (e.g. tt-metal/tt-shield's /opt/venv).
+        # --no-cache prevents writes outside the venv; the hatchling build
+        # backend uses $TMPDIR and never writes back to TOOL_DIR.
         uv pip install --no-cache --quiet "$TOOL_DIR"
         ai-job-summary --config "$CONFIG_PATH" --validate
 
