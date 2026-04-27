@@ -385,17 +385,10 @@ def extract_log(
         r"TT_FATAL|TT_THROW|\bpanic\b|Segmentation fault|SIGSEGV",
         full_text, re.IGNORECASE,
     )
-    # Curated list of Python exception names that, when followed by a colon,
-    # reliably indicate the process died on an uncaught exception. The
-    # negative lookbehind `(?<![\w.])` requires that the type name is NOT
-    # preceded by a word char or dot — that lets line-start cases match,
-    # vLLM-prefixed cases match (e.g. "(APIServer pid=896) RuntimeError:"
-    # and "[core.py:1104] AttributeError:"), but excludes module-qualified
-    # mentions (`vllm.RuntimeError:`) and concatenated identifiers
-    # (`MyRuntimeError:`). We deliberately exclude broader types like
-    # ValueError / TypeError / IndexError — they occur routinely in pytest
-    # output and would false-positive. Extend the allow-list only when we
-    # see a real failure mode that isn't caught today.
+    # The (?<![\w.]) lookbehind allows real log prefixes ("(APIServer pid=N) ",
+    # "[core.py:1104] ") while excluding module-qualified or concatenated
+    # names (vllm.RuntimeError:, MyAttributeError:). ValueError/TypeError/
+    # IndexError are intentionally absent — too noisy in pytest output.
     py_crash = re.search(
         r"(?<![\w.])(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
         full_text,
