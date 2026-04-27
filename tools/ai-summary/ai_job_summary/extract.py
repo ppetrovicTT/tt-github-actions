@@ -385,15 +385,20 @@ def extract_log(
         r"TT_FATAL|TT_THROW|\bpanic\b|Segmentation fault|SIGSEGV",
         full_text, re.IGNORECASE,
     )
-    # Curated list of Python exception names that, when anchored to a line
-    # start (traceback tail), reliably indicate the process died. We
-    # deliberately exclude broader types like ValueError/TypeError/IndexError:
-    # those occur routinely inside pytest/assertion output on otherwise-
-    # healthy test runs and would produce false positives. Extend this list
-    # only when we see a real failure mode that isn't caught today.
+    # Curated list of Python exception names that, when followed by a colon,
+    # reliably indicate the process died on an uncaught exception. The
+    # negative lookbehind `(?<![\w.])` requires that the type name is NOT
+    # preceded by a word char or dot — that lets line-start cases match,
+    # vLLM-prefixed cases match (e.g. "(APIServer pid=896) RuntimeError:"
+    # and "[core.py:1104] AttributeError:"), but excludes module-qualified
+    # mentions (`vllm.RuntimeError:`) and concatenated identifiers
+    # (`MyRuntimeError:`). We deliberately exclude broader types like
+    # ValueError / TypeError / IndexError — they occur routinely in pytest
+    # output and would false-positive. Extend the allow-list only when we
+    # see a real failure mode that isn't caught today.
     py_crash = re.search(
-        r"^(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
-        full_text, re.MULTILINE,
+        r"(?<![\w.])(?:AttributeError|KeyError|RuntimeError|ModuleNotFoundError|ImportError):",
+        full_text,
     )
     result.has_crash = bool(tt_crash or py_crash)
 

@@ -96,9 +96,10 @@ class TestVllmConfigError:
     def test_error_sections_not_empty(self, extracted):
         assert len(extracted.error_sections) >= 1
 
-    def test_has_crash_is_false(self, extracted):
-        """vLLM config rejection is not a TT_FATAL crash."""
-        assert extracted.has_crash is False
+    def test_has_crash_is_true(self, extracted):
+        """vLLM config rejection propagates as RuntimeError — process died on
+        an uncaught exception, so it's a crash. LLM decides the category."""
+        assert extracted.has_crash is True
 
 
 # ── tt-metal:fabric — Ethernet core timeout ───────────────────────────────────
@@ -523,6 +524,32 @@ class TestHasCrashPythonExceptions:
         # and bounds-check code paths and would false-positive on healthy
         # test output.
         assert not self._run("IndexError: list index out of range\n", tmp_path)
+
+    def test_vllm_prefixed_runtime_error(self, tmp_path):
+        # Real vLLM logs prefix every line with "(APIServer pid=N) " or
+        # "(EngineCore_DP0 pid=N) ". The detector must see the exception
+        # type after that prefix.
+        assert self._run(
+            "(APIServer pid=896) RuntimeError: Engine core initialization failed.\n",
+            tmp_path,
+        )
+
+    def test_vllm_prefixed_attribute_error_with_module_marker(self, tmp_path):
+        # Real Qwen failure shape: prefix + ERROR log marker + traceback tail.
+        assert self._run(
+            "(EngineCore_DP0 pid=973) ERROR 04-24 [core.py:1104] "
+            "AttributeError: 'NoneType' object has no attribute 'endswith'\n",
+            tmp_path,
+        )
+
+    def test_does_not_match_module_qualified_name(self, tmp_path):
+        # vllm.RuntimeError: ... in a stack-trace import path must NOT match
+        # (the negative lookbehind on '.' excludes module-qualified names).
+        assert not self._run("vllm.RuntimeError: bad\n", tmp_path)
+
+    def test_does_not_match_concatenated_identifier(self, tmp_path):
+        # MyAttributeError is a user-defined class, not the stdlib one.
+        assert not self._run("MyAttributeError: bad\n", tmp_path)
 
 
 # ── error-section dedup ───────────────────────────────────────────────────────
